@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs';
 import { Button } from './components/ui/button';
 import { Badge } from './components/ui/badge';
@@ -7,30 +7,37 @@ import { Leaderboard } from './components/Leaderboard';
 import { TradingInterface } from './components/TradingInterface';
 import { ProfileVerification } from './components/ProfileVerification';
 import { Wallet, Trophy, Coins, User, ExternalLink, Sparkles } from 'lucide-react';
+import MyWalletProvider from "./components/my-wallet-provider";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { useConnectWallet, useLogin, usePrivy, useSolanaWallets } from "@privy-io/react-auth";
 
 export default function App() {
-  const [isWalletConnected, setIsWalletConnected] = useState(false);
+  const { wallets, createWallet } = useSolanaWallets();
+  const { user, ready, authenticated, login, getAccessToken, logout } =
+    usePrivy();
+  const { connectWallet } = useConnectWallet();
   const [walletAddress, setWalletAddress] = useState('');
   const [selectedToken, setSelectedToken] = useState(null);
 
   const connectPhantomWallet = async () => {
-    // Mock wallet connection
     try {
-      // In a real app, this would use the Phantom wallet API
-      const mockAddress = '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU';
-      setWalletAddress(mockAddress);
-      setIsWalletConnected(true);
+      login({ loginMethods: ['wallet'] })
+      setWalletAddress(wallets[0].address)
+      console.log(wallets[0].address);
+
     } catch (error) {
       console.error('Error connecting wallet:', error);
     }
   };
 
   const disconnectWallet = () => {
-    setIsWalletConnected(false);
+    logout()
     setWalletAddress('');
   };
 
+
   return (
+
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="border-b border-border bg-card">
@@ -48,9 +55,9 @@ export default function App() {
                 <p className="text-xs text-muted-foreground">X-Verified Token Trading</p>
               </div>
             </div>
-            
+
             <div className="flex items-center space-x-4">
-              {isWalletConnected ? (
+              {authenticated ? (
                 <div className="flex items-center space-x-2">
                   <Badge variant="secondary" className="flex items-center space-x-1">
                     <Wallet className="h-3 w-3" />
@@ -94,15 +101,15 @@ export default function App() {
           </TabsList>
 
           <TabsContent value="tokens">
-            <TokenList 
-              isWalletConnected={isWalletConnected}
+            <TokenList
+              authenticated={authenticated}
               onSelectToken={setSelectedToken}
             />
           </TabsContent>
 
           <TabsContent value="trading">
-            <TradingInterface 
-              isWalletConnected={isWalletConnected}
+            <TradingInterface
+              authenticated={authenticated}
               selectedToken={selectedToken}
             />
           </TabsContent>
@@ -112,13 +119,15 @@ export default function App() {
           </TabsContent>
 
           <TabsContent value="profile">
-            <ProfileVerification 
-              isWalletConnected={isWalletConnected}
+            <ProfileVerification
+              authenticated={authenticated}
               walletAddress={walletAddress}
             />
           </TabsContent>
         </Tabs>
       </main>
     </div>
+
+
   );
 }

@@ -122,22 +122,22 @@ const mockXTokens = [
 ];
 
 interface TokenListProps {
-  isWalletConnected: boolean;
+  authenticated: boolean;
   onSelectToken: (token: any) => void;
 }
 
-export function TokenList({ isWalletConnected, onSelectToken }: TokenListProps) {
+export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState('all');
 
   const filteredTokens = mockXTokens.filter(token => {
     const matchesSearch = token.displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         token.xHandle.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         token.tokenName.toLowerCase().includes(searchTerm.toLowerCase());
-    
+      token.xHandle.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      token.tokenName.toLowerCase().includes(searchTerm.toLowerCase());
+
     if (filter === 'verified') return matchesSearch && token.verified;
     if (filter === 'trending') return matchesSearch && token.change24h > 0;
-    
+
     return matchesSearch;
   });
 
@@ -221,16 +221,16 @@ export function TokenList({ isWalletConnected, onSelectToken }: TokenListProps) 
                 </Badge>
               </div>
             </CardHeader>
-            
+
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground line-clamp-2">{token.description}</p>
-              
+
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">Token Price</span>
                   <span className="font-medium">${token.price.toLocaleString()}</span>
                 </div>
-                
+
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">24h Change</span>
                   <div className={`flex items-center space-x-1 ${token.change24h >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -238,36 +238,36 @@ export function TokenList({ isWalletConnected, onSelectToken }: TokenListProps) 
                     <span className="text-sm font-medium">{Math.abs(token.change24h)}%</span>
                   </div>
                 </div>
-                
+
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">Market Cap</span>
                   <span className="text-sm font-medium">${token.marketCap}</span>
                 </div>
-                
+
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">Followers</span>
                   <span className="text-sm font-medium">{token.followers}</span>
                 </div>
               </div>
-              
+
               <div className="flex gap-2 pt-2">
-                <Button 
-                  className="flex-1" 
+                <Button
+                  className="flex-1"
                   onClick={() => onSelectToken(token)}
-                  disabled={!isWalletConnected}
+                  disabled={!authenticated}
                 >
                   Trade ${token.tokenName}
                 </Button>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={() => openXProfile(token.xHandle)}
                   className="flex items-center space-x-1"
                 >
                   <Twitter className="h-3 w-3" />
                 </Button>
               </div>
-              
-              {!isWalletConnected && (
+
+              {!authenticated && (
                 <p className="text-xs text-muted-foreground text-center">
                   Connect your wallet to start trading
                 </p>

@@ -9,11 +9,11 @@ import { AlertCircle, ArrowUpDown, TrendingUp, TrendingDown } from 'lucide-react
 import { Alert, AlertDescription } from './ui/alert';
 
 interface TradingInterfaceProps {
-  isWalletConnected: boolean;
+  authenticated: boolean;
   selectedToken: any;
 }
 
-export function TradingInterface({ isWalletConnected, selectedToken }: TradingInterfaceProps) {
+export function TradingInterface({ authenticated, selectedToken }: TradingInterfaceProps) {
   const [buyAmount, setBuyAmount] = useState('');
   const [sellAmount, setSellAmount] = useState('');
   const [solBalance] = useState(12.5678); // Mock SOL balance
@@ -28,14 +28,14 @@ export function TradingInterface({ isWalletConnected, selectedToken }: TradingIn
   const token = selectedToken || defaultToken;
 
   const handleBuy = () => {
-    if (!isWalletConnected) return;
+    if (!authenticated) return;
     // Mock trading logic
     alert(`Buying ${buyAmount} ${token.symbol} for ${(parseFloat(buyAmount) * token.price).toFixed(4)} SOL`);
     setBuyAmount('');
   };
 
   const handleSell = () => {
-    if (!isWalletConnected) return;
+    if (!authenticated) return;
     // Mock trading logic
     alert(`Selling ${sellAmount} ${token.symbol} for ${(parseFloat(sellAmount) * token.price).toFixed(4)} SOL`);
     setSellAmount('');
@@ -51,7 +51,7 @@ export function TradingInterface({ isWalletConnected, selectedToken }: TradingIn
 
   return (
     <div className="space-y-6">
-      {!isWalletConnected && (
+      {!authenticated && (
         <Alert>
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
@@ -101,10 +101,10 @@ export function TradingInterface({ isWalletConnected, selectedToken }: TradingIn
                       placeholder="0.00"
                       value={buyAmount}
                       onChange={(e) => setBuyAmount(e.target.value)}
-                      disabled={!isWalletConnected}
+                      disabled={!authenticated}
                     />
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label>Total Cost (SOL)</Label>
                     <div className="p-3 bg-muted rounded-md">
@@ -115,40 +115,40 @@ export function TradingInterface({ isWalletConnected, selectedToken }: TradingIn
                   </div>
 
                   <div className="flex gap-2">
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       onClick={() => setBuyAmount((solBalance * 0.25 / token.price).toFixed(4))}
-                      disabled={!isWalletConnected}
+                      disabled={!authenticated}
                     >
                       25%
                     </Button>
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       onClick={() => setBuyAmount((solBalance * 0.5 / token.price).toFixed(4))}
-                      disabled={!isWalletConnected}
+                      disabled={!authenticated}
                     >
                       50%
                     </Button>
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       onClick={() => setBuyAmount((solBalance * 0.75 / token.price).toFixed(4))}
-                      disabled={!isWalletConnected}
+                      disabled={!authenticated}
                     >
                       75%
                     </Button>
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       onClick={() => setBuyAmount((solBalance / token.price).toFixed(4))}
-                      disabled={!isWalletConnected}
+                      disabled={!authenticated}
                     >
                       Max
                     </Button>
                   </div>
 
-                  <Button 
-                    className="w-full" 
+                  <Button
+                    className="w-full"
                     onClick={handleBuy}
-                    disabled={!isWalletConnected || !buyAmount}
+                    disabled={!authenticated || !buyAmount}
                   >
                     Buy {token.symbol}
                   </Button>
@@ -163,10 +163,10 @@ export function TradingInterface({ isWalletConnected, selectedToken }: TradingIn
                       placeholder="0.00"
                       value={sellAmount}
                       onChange={(e) => setSellAmount(e.target.value)}
-                      disabled={!isWalletConnected}
+                      disabled={!authenticated}
                     />
                   </div>
-                  
+
                   <div className="space-y-2">
                     <Label>You'll Receive (SOL)</Label>
                     <div className="p-3 bg-muted rounded-md">
@@ -176,10 +176,10 @@ export function TradingInterface({ isWalletConnected, selectedToken }: TradingIn
                     </div>
                   </div>
 
-                  <Button 
-                    className="w-full" 
+                  <Button
+                    className="w-full"
                     onClick={handleSell}
-                    disabled={!isWalletConnected || !sellAmount}
+                    disabled={!authenticated || !sellAmount}
                   >
                     Sell {token.symbol}
                   </Button>

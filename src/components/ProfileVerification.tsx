@@ -7,24 +7,34 @@ import { Badge } from './ui/badge';
 import { Avatar, AvatarFallback } from './ui/avatar';
 import { Alert, AlertDescription } from './ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { 
-  Twitter, 
-  CheckCircle, 
-  AlertCircle, 
-  Copy, 
-  ExternalLink, 
-  User, 
+import {
+  Twitter,
+  CheckCircle,
+  AlertCircle,
+  Copy,
+  ExternalLink,
+  User,
   Trophy,
   Coins,
   TrendingUp
 } from 'lucide-react';
+import { checkUserTweetContains } from "../lib/twitter";
+import { useSendTransaction, useSolanaWallets } from "@privy-io/react-auth/solana";
+import { Connection, Keypair, PublicKey, Transaction, TransactionInstruction } from "@solana/web3.js"
+import { X_TOKEN_PROGRAM_ADDRESS } from "../lib/xToken/programs";
+import { getInitializeInstruction, InitializeInput } from "../lib/xToken/instructions";
+import { AccountMeta, AccountRole, Address, TransactionSigner } from "@solana/kit";
+import { Buffer } from "buffer";
 
 interface ProfileVerificationProps {
-  isWalletConnected: boolean;
+  authenticated: boolean;
   walletAddress: string;
 }
 
-export function ProfileVerification({ isWalletConnected, walletAddress }: ProfileVerificationProps) {
+export function ProfileVerification({ authenticated, walletAddress }: ProfileVerificationProps) {
+  const { sendTransaction } = useSendTransaction();
+  const { wallets } = useSolanaWallets();
+
   const [xHandle, setXHandle] = useState('');
   const [isVerified, setIsVerified] = useState(false);
   const [verificationStep, setVerificationStep] = useState(1);
@@ -41,12 +51,14 @@ export function ProfileVerification({ isWalletConnected, walletAddress }: Profil
 
   const verificationMessage = `I am verifying my wallet address ${walletAddress} on Minty.fun platform. #MintyFunVerification`;
 
-  const handleXVerification = () => {
+  const handleXVerification = async () => {
     if (verificationStep === 1) {
+      createToken()
       // Step 1: Generate verification message
-      setVerificationStep(2);
+      // setVerificationStep(2);
     } else if (verificationStep === 2) {
       // Step 2: Mock verification check
+      checkUserTweetContains('HoaL1483171', 'MintyFunVerification')
       setIsVerified(true);
       setVerificationStep(3);
     }
@@ -61,9 +73,93 @@ export function ProfileVerification({ isWalletConnected, walletAddress }: Profil
     window.open(tweetUrl, '_blank');
   };
 
+  const createToken = async () => {
+
+    try {
+      console.log(0);
+
+      const connection = new Connection("https://api.devnet.solana.com", "confirmed")
+      // Get user's address from Privy wallet
+      const userAddressStr = wallets[0].address
+      const userAddress = new PublicKey(userAddressStr)
+      const feeRecipient = userAddressStr // Default to user if not set
+
+      // Generate PDAs and keys (adjust based on your program logic)
+      const mintKeypair = Keypair.generate() // New mint account
+      const bondingCurveSeeds = [mintKeypair.publicKey.toBytes()] // Example; adjust to your PDA seeds
+      const [bondingCurvePda] = PublicKey.findProgramAddressSync(bondingCurveSeeds, new PublicKey(X_TOKEN_PROGRAM_ADDRESS))
+      console.log(1);
+      // Prepare input for getInitializeInstruction
+      const initializeInput: InitializeInput = {
+        authority: { address: userAddressStr as Address } as TransactionSigner,
+        bondingCurve: bondingCurvePda.toBase58() as Address,
+        mint: mintKeypair.publicKey.toBase58() as Address,
+        payer: { address: userAddressStr as Address } as TransactionSigner,
+        rent: "SysvarRent111111111111111111111111111111111" as Address,
+        decimals: 9,
+        curveType: 1,
+        feeBasisPoints: 0.05,
+        basePrice: 1,
+        slope: 1,
+        maxSupply: 100, // Map supply to maxSupply
+        feeRecipient: feeRecipient as Address,
+      }
+
+      console.log(2);
+      // Get the instruction using Codama-generated function
+      const initializeInstruction = getInitializeInstruction(initializeInput)
+
+      // Convert to web3.js TransactionInstruction
+      const keys = initializeInstruction.accounts.map((meta: AccountMeta<string>) => ({
+        pubkey: new PublicKey(meta.address),
+        isSigner: meta.role === AccountRole.READONLY_SIGNER || meta.role === AccountRole.WRITABLE_SIGNER,
+        isWritable: meta.role === AccountRole.WRITABLE || meta.role === AccountRole.WRITABLE_SIGNER,
+      }))
+
+      console.log(3);
+      const programId = new PublicKey(initializeInstruction.programAddress)
+      const data = Buffer.from(initializeInstruction.data)
+      const txInstruction = new TransactionInstruction({ keys, programId, data })
+
+      // Tạo giao dịch
+      const transaction = new Transaction();
+
+      // Lấy recentBlockhash từ Solana
+      const latestBlockhash = await connection.getLatestBlockhash();
+      transaction.recentBlockhash = latestBlockhash.blockhash;
+      transaction.feePayer = userAddress; // Đặt feePayer là ví của người dùng
+
+      // Thêm instruction vào giao dịch
+      transaction.add(txInstruction);
+      console.log(4);
+
+      // Add mint creation or other instructions if needed (e.g., metadata)
+      // Note: For metadata (name, symbol, description, logo), you may need to:
+      // 1. Upload logo to IPFS/Arweave.
+      // 2. Create metadata JSON and upload.
+      // 3. Call Token Metadata program's update_metadata instruction.
+      // This is not included here; add separately using @metaplex-foundation/mpl-token-metadata or similar.
+
+      // Send the transaction using Privy's sendTransaction
+      const receipt = await sendTransaction({
+        transaction: transaction,
+        connection: connection,
+        address: wallets[0].address, // Optional: Specify the wallet to use for signing
+      })
+
+      console.log(5);
+
+      console.log("Transaction sent with signature:", receipt.signature)
+      alert("Token created successfully!")
+    } catch (error) {
+      console.error("Error creating token:", error)
+      alert("Failed to create token. Check console for details.")
+    }
+  }
+
   return (
     <div className="space-y-6">
-      {!isWalletConnected && (
+      {!authenticated && (
         <Alert>
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
@@ -101,7 +197,7 @@ export function ProfileVerification({ isWalletConnected, walletAddress }: Profil
                     placeholder="Enter your username"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    disabled={!isWalletConnected}
+                    disabled={!authenticated}
                   />
                 </div>
 
@@ -112,11 +208,11 @@ export function ProfileVerification({ isWalletConnected, walletAddress }: Profil
                     placeholder="Tell us about yourself"
                     value={bio}
                     onChange={(e) => setBio(e.target.value)}
-                    disabled={!isWalletConnected}
+                    disabled={!authenticated}
                   />
                 </div>
 
-                <Button className="w-full" disabled={!isWalletConnected}>
+                <Button className="w-full" disabled={!authenticated}>
                   Update Profile
                 </Button>
               </CardContent>
@@ -132,14 +228,14 @@ export function ProfileVerification({ isWalletConnected, walletAddress }: Profil
                     <span className="text-muted-foreground">Wallet Address</span>
                     <div className="flex items-center space-x-2">
                       <span className="font-mono text-sm">
-                        {isWalletConnected 
+                        {authenticated
                           ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
                           : 'Not Connected'
                         }
                       </span>
-                      {isWalletConnected && (
-                        <Button 
-                          size="sm" 
+                      {authenticated && (
+                        <Button
+                          size="sm"
                           variant="outline"
                           onClick={() => copyToClipboard(walletAddress)}
                         >
@@ -216,13 +312,13 @@ export function ProfileVerification({ isWalletConnected, walletAddress }: Profil
                           placeholder="yourusername"
                           value={xHandle}
                           onChange={(e) => setXHandle(e.target.value)}
-                          disabled={!isWalletConnected}
+                          disabled={!authenticated}
                         />
                       </div>
-                      
-                      <Button 
+
+                      <Button
                         onClick={handleXVerification}
-                        disabled={!isWalletConnected || !xHandle}
+                        disabled={!authenticated || !xHandle}
                         className="w-full"
                       >
                         Start Verification
@@ -247,7 +343,7 @@ export function ProfileVerification({ isWalletConnected, walletAddress }: Profil
                       </div>
 
                       <div className="flex gap-2">
-                        <Button 
+                        <Button
                           onClick={openTwitterPost}
                           className="flex-1 flex items-center space-x-2"
                         >
@@ -255,7 +351,7 @@ export function ProfileVerification({ isWalletConnected, walletAddress }: Profil
                           <span>Post on X</span>
                           <ExternalLink className="h-3 w-3" />
                         </Button>
-                        <Button 
+                        <Button
                           variant="outline"
                           onClick={() => copyToClipboard(verificationMessage)}
                         >
@@ -263,7 +359,7 @@ export function ProfileVerification({ isWalletConnected, walletAddress }: Profil
                         </Button>
                       </div>
 
-                      <Button 
+                      <Button
                         onClick={handleXVerification}
                         variant="secondary"
                         className="w-full"
@@ -290,7 +386,7 @@ export function ProfileVerification({ isWalletConnected, walletAddress }: Profil
                   <p className="text-muted-foreground">
                     Your X account @{xHandle} is verified and linked to your wallet.
                   </p>
-                  <Button 
+                  <Button
                     variant="outline"
                     onClick={() => {
                       setIsVerified(false);
