@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -7,6 +7,7 @@ import { Badge } from './ui/badge';
 import { Avatar, AvatarFallback } from './ui/avatar';
 import { Alert, AlertDescription } from './ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { toast } from 'react-toastify';
 import {
   Twitter,
   CheckCircle,
@@ -23,6 +24,8 @@ import { useSendTransaction, useSolanaWallets } from "@privy-io/react-auth/solan
 import { Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction } from "@solana/web3.js"
 import { X_TOKEN_PROGRAM_ADDRESS } from "../lib/xToken/programs";
 import { getInitializeInstruction, InitializeInput } from "../lib/xToken/instructions";
+import { getUpdateProfileInstruction } from "../lib/xToken/instructions";
+import { deriveUserProfilePda, fetchUserProfile as fetchUserProfileOnchain, prepareProfilePayload } from "../lib/profile";
 import { AccountMeta, AccountRole, Address, TransactionSigner } from "@solana/kit";
 import { Buffer } from "buffer";
 import { TOKEN_PROGRAM_ID, MINT_SIZE } from "@solana/spl-token";
@@ -43,6 +46,23 @@ export function ProfileVerification({ authenticated, walletAddress }: ProfileVer
   const [verificationStep, setVerificationStep] = useState(1);
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
+
+  // Load on-chain profile (username, bio) if exists
+  useEffect(() => {
+    const loadProfile = async () => {
+      try {
+        if (!wallets || wallets.length === 0) return;
+        const connection = new Connection("https://api.devnet.solana.com", "confirmed");
+        const userAddress = new PublicKey(wallets[0].address);
+        const profile = await fetchUserProfileOnchain(connection, userAddress, new PublicKey(X_TOKEN_PROGRAM_ADDRESS));
+        if (profile?.username) setUsername(profile.username);
+        if (profile?.bio) setBio(profile.bio);
+      } catch (e) {
+        console.warn('Load profile failed:', (e as any)?.message || e);
+      }
+    };
+    loadProfile();
+  }, [wallets && wallets[0]?.address]);
 
   const mockUserStats = {
     totalTrades: 156,
@@ -144,8 +164,89 @@ export function ProfileVerification({ authenticated, walletAddress }: ProfileVer
       }, "confirmed");
 
       console.log("Token created:", receipt.signature);
+      toast.success((
+        <div className="space-y-2">
+          <div>Token created successfully.</div>
+          <Button size="sm" variant="outline" onClick={() => window.open(`https://solscan.io/tx/${receipt.signature}?cluster=devnet`, '_blank')}>View transaction</Button>
+        </div>
+      ));
     } catch (error: any) {
       console.error("Error:", error?.message || error);
+      toast.error(String(error?.message || error));
+    }
+  };
+
+  const updateProfile = async () => {
+    try {
+      if (!wallets || wallets.length === 0) {
+        console.error("No wallet connected");
+        return;
+      }
+      if (!username) {
+        console.error("Username is required");
+        return;
+      }
+
+      const connection = new Connection("https://api.devnet.solana.com", "confirmed");
+      const userAddress = new PublicKey(wallets[0].address);
+
+      // Derive user_profile PDA: seeds ["user_profile", user]
+      const userProfilePda = deriveUserProfilePda(userAddress, new PublicKey(X_TOKEN_PROGRAM_ADDRESS));
+
+      // Encode data using helper to prepare fixed-size fields
+      const { usernameFixed, bioFixed, usernameLen, bioLen } = prepareProfilePayload(username, bio);
+
+      const ixCodama = getUpdateProfileInstruction({
+        userProfile: userProfilePda.toBase58() as Address,
+        user: { address: wallets[0].address as Address } as TransactionSigner,
+        systemProgram: SystemProgram.programId.toBase58() as Address,
+        usernameLen,
+        bioLen,
+        padding: 0,
+        username: Array.from(usernameFixed),
+        bio: Array.from(bioFixed),
+      });
+
+      const keys = ixCodama.accounts.map((meta: AccountMeta<string>) => ({
+        pubkey: new PublicKey(meta.address),
+        isSigner: meta.role === AccountRole.READONLY_SIGNER || meta.role === AccountRole.WRITABLE_SIGNER,
+        isWritable: meta.role === AccountRole.WRITABLE || meta.role === AccountRole.WRITABLE_SIGNER,
+      }));
+
+      const ix = new TransactionInstruction({
+        keys,
+        programId: new PublicKey(ixCodama.programAddress),
+        data: Buffer.from(ixCodama.data),
+      });
+
+      const tx = new Transaction();
+      const latestBlockhash = await connection.getLatestBlockhash();
+      tx.recentBlockhash = latestBlockhash.blockhash;
+      tx.feePayer = userAddress;
+      tx.add(ix);
+
+      const receipt = await sendTransaction({ transaction: tx, connection, address: wallets[0].address });
+      await connection.confirmTransaction({
+        signature: receipt.signature,
+        blockhash: latestBlockhash.blockhash,
+        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+      }, "confirmed");
+
+      console.log("Profile updated:", receipt.signature);
+      toast.success((
+        <div className="space-y-2">
+          <div>Profile updated.</div>
+        </div>
+      ));
+
+      try {
+        const refreshed = await fetchUserProfileOnchain(connection, userAddress, new PublicKey(X_TOKEN_PROGRAM_ADDRESS));
+        if (refreshed?.username !== undefined) setUsername(refreshed.username);
+        if (refreshed?.bio !== undefined) setBio(refreshed.bio);
+      } catch { }
+    } catch (error: any) {
+      console.error("Update profile error:", error?.message || error);
+      toast.error(String(error?.message || error));
     }
   };
 
@@ -204,7 +305,7 @@ export function ProfileVerification({ authenticated, walletAddress }: ProfileVer
                   />
                 </div>
 
-                <Button className="w-full" disabled={!authenticated}>
+                <Button className="w-full" disabled={!authenticated} onClick={updateProfile}>
                   Update Profile
                 </Button>
               </CardContent>
