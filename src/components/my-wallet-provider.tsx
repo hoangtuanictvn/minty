@@ -14,6 +14,11 @@ export default function MyWalletProvider({ children }: PropsWithChildren) {
                     walletChainType: "ethereum-and-solana",
                 },
                 loginMethods: ["wallet"],
+                embeddedWallets: {
+                    solana: {
+                        createOnLogin: 'users-without-wallets', // mặc định là 'all-users'
+                    },
+                },
                 externalWallets: { solana: { connectors: toSolanaWalletConnectors() } },
             }}
         >

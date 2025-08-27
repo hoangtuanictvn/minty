@@ -49,11 +49,11 @@ export type ParsedXTokenInstruction<
   TProgram extends string = '8ngixonBmuMvzKA3woFu9rgjXqTtZYM4vMsmNgf9KF7S',
 > =
   | ({
-    instructionType: XTokenInstruction.Initialize;
-  } & ParsedInitializeInstruction<TProgram>)
+      instructionType: XTokenInstruction.Initialize;
+    } & ParsedInitializeInstruction<TProgram>)
   | ({
-    instructionType: XTokenInstruction.BuyTokens;
-  } & ParsedBuyTokensInstruction<TProgram>)
+      instructionType: XTokenInstruction.BuyTokens;
+    } & ParsedBuyTokensInstruction<TProgram>)
   | ({
-    instructionType: XTokenInstruction.SellTokens;
-  } & ParsedSellTokensInstruction<TProgram>);
+      instructionType: XTokenInstruction.SellTokens;
+    } & ParsedSellTokensInstruction<TProgram>);

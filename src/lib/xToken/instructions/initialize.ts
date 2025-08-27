@@ -14,6 +14,8 @@ import {
   getStructEncoder,
   getU16Decoder,
   getU16Encoder,
+  getU32Decoder,
+  getU32Encoder,
   getU64Decoder,
   getU64Encoder,
   getU8Decoder,
@@ -51,11 +53,11 @@ export type InitializeInstruction<
   TAccountMint extends string | AccountMeta<string> = string,
   TAccountPayer extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends
-  | string
-  | AccountMeta<string> = '11111111111111111111111111111111',
+    | string
+    | AccountMeta<string> = '11111111111111111111111111111111',
   TAccountTokenProgram extends
-  | string
-  | AccountMeta<string> = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+    | string
+    | AccountMeta<string> = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
   TAccountRent extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
 > = Instruction<TProgram> &
@@ -63,28 +65,28 @@ export type InitializeInstruction<
   InstructionWithAccounts<
     [
       TAccountAuthority extends string
-      ? ReadonlySignerAccount<TAccountAuthority> &
-      AccountSignerMeta<TAccountAuthority>
-      : TAccountAuthority,
+        ? ReadonlySignerAccount<TAccountAuthority> &
+            AccountSignerMeta<TAccountAuthority>
+        : TAccountAuthority,
       TAccountBondingCurve extends string
-      ? WritableAccount<TAccountBondingCurve>
-      : TAccountBondingCurve,
+        ? WritableAccount<TAccountBondingCurve>
+        : TAccountBondingCurve,
       TAccountMint extends string
-      ? WritableAccount<TAccountMint>
-      : TAccountMint,
+        ? WritableAccount<TAccountMint>
+        : TAccountMint,
       TAccountPayer extends string
-      ? WritableSignerAccount<TAccountPayer> &
-      AccountSignerMeta<TAccountPayer>
-      : TAccountPayer,
+        ? WritableSignerAccount<TAccountPayer> &
+            AccountSignerMeta<TAccountPayer>
+        : TAccountPayer,
       TAccountSystemProgram extends string
-      ? ReadonlyAccount<TAccountSystemProgram>
-      : TAccountSystemProgram,
+        ? ReadonlyAccount<TAccountSystemProgram>
+        : TAccountSystemProgram,
       TAccountTokenProgram extends string
-      ? ReadonlyAccount<TAccountTokenProgram>
-      : TAccountTokenProgram,
+        ? ReadonlyAccount<TAccountTokenProgram>
+        : TAccountTokenProgram,
       TAccountRent extends string
-      ? ReadonlyAccount<TAccountRent>
-      : TAccountRent,
+        ? ReadonlyAccount<TAccountRent>
+        : TAccountRent,
       ...TRemainingAccounts,
     ]
   >;
@@ -97,6 +99,8 @@ export type InitializeInstructionData = {
   curveType: number;
   /** Fees in basis points (100 = 1%) */
   feeBasisPoints: number;
+  /** Padding for alignment */
+  padding: number;
   /** Base price in lamports per token (scaled by 1e9) */
   basePrice: bigint;
   /** Slope parameter for pricing curve (scaled by 1e9) */
@@ -114,6 +118,8 @@ export type InitializeInstructionDataArgs = {
   curveType: number;
   /** Fees in basis points (100 = 1%) */
   feeBasisPoints: number;
+  /** Padding for alignment */
+  padding: number;
   /** Base price in lamports per token (scaled by 1e9) */
   basePrice: number | bigint;
   /** Slope parameter for pricing curve (scaled by 1e9) */
@@ -131,6 +137,7 @@ export function getInitializeInstructionDataEncoder(): FixedSizeEncoder<Initiali
       ['decimals', getU8Encoder()],
       ['curveType', getU8Encoder()],
       ['feeBasisPoints', getU16Encoder()],
+      ['padding', getU32Encoder()],
       ['basePrice', getU64Encoder()],
       ['slope', getU64Encoder()],
       ['maxSupply', getU64Encoder()],
@@ -146,6 +153,7 @@ export function getInitializeInstructionDataDecoder(): FixedSizeDecoder<Initiali
     ['decimals', getU8Decoder()],
     ['curveType', getU8Decoder()],
     ['feeBasisPoints', getU16Decoder()],
+    ['padding', getU32Decoder()],
     ['basePrice', getU64Decoder()],
     ['slope', getU64Decoder()],
     ['maxSupply', getU64Decoder()],
@@ -174,11 +182,11 @@ export type InitializeInput<
 > = {
   /** Authority that will control the bonding curve */
   authority: TransactionSigner<TAccountAuthority>;
-  /** Bonding curve state account (PDA) */
+  /** Bonding curve state account (PDA) - will be created by program */
   bondingCurve: Address<TAccountBondingCurve>;
-  /** Token mint account */
+  /** Token mint account - must be created by client before calling */
   mint: Address<TAccountMint>;
-  /** Payer for account creation */
+  /** Payer for account creation and rent */
   payer: TransactionSigner<TAccountPayer>;
   /** System Program */
   systemProgram?: Address<TAccountSystemProgram>;
@@ -189,6 +197,7 @@ export type InitializeInput<
   decimals: InitializeInstructionDataArgs['decimals'];
   curveType: InitializeInstructionDataArgs['curveType'];
   feeBasisPoints: InitializeInstructionDataArgs['feeBasisPoints'];
+  padding: InitializeInstructionDataArgs['padding'];
   basePrice: InitializeInstructionDataArgs['basePrice'];
   slope: InitializeInstructionDataArgs['slope'];
   maxSupply: InitializeInstructionDataArgs['maxSupply'];
@@ -293,11 +302,11 @@ export type ParsedInitializeInstruction<
   accounts: {
     /** Authority that will control the bonding curve */
     authority: TAccountMetas[0];
-    /** Bonding curve state account (PDA) */
+    /** Bonding curve state account (PDA) - will be created by program */
     bondingCurve: TAccountMetas[1];
-    /** Token mint account */
+    /** Token mint account - must be created by client before calling */
     mint: TAccountMetas[2];
-    /** Payer for account creation */
+    /** Payer for account creation and rent */
     payer: TAccountMetas[3];
     /** System Program */
     systemProgram: TAccountMetas[4];

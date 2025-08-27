@@ -20,11 +20,14 @@ import {
 } from 'lucide-react';
 import { checkUserTweetContains } from "../lib/twitter";
 import { useSendTransaction, useSolanaWallets } from "@privy-io/react-auth/solana";
-import { Connection, Keypair, PublicKey, Transaction, TransactionInstruction } from "@solana/web3.js"
+import { Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction } from "@solana/web3.js"
 import { X_TOKEN_PROGRAM_ADDRESS } from "../lib/xToken/programs";
 import { getInitializeInstruction, InitializeInput } from "../lib/xToken/instructions";
 import { AccountMeta, AccountRole, Address, TransactionSigner } from "@solana/kit";
 import { Buffer } from "buffer";
+import { TOKEN_PROGRAM_ID, MINT_SIZE } from "@solana/spl-token";
+import bs58 from 'bs58';
+
 
 interface ProfileVerificationProps {
   authenticated: boolean;
@@ -74,88 +77,77 @@ export function ProfileVerification({ authenticated, walletAddress }: ProfileVer
   };
 
   const createToken = async () => {
-
     try {
-      console.log(0);
+      if (!wallets || wallets.length === 0) {
+        console.error("No wallet connected");
+        return;
+      }
 
-      const connection = new Connection("https://api.devnet.solana.com", "confirmed")
-      // Get user's address from Privy wallet
-      const userAddressStr = wallets[0].address
-      const userAddress = new PublicKey(userAddressStr)
-      const feeRecipient = userAddressStr // Default to user if not set
+      const connection = new Connection("https://api.devnet.solana.com", "confirmed");
+      const userAddress = new PublicKey(wallets[0].address);
+      const mintKeypair = Keypair.generate();
+      const bondingCurveSeeds = [Buffer.from("x_token"), mintKeypair.publicKey.toBuffer()];
+      const [bondingCurvePda] = PublicKey.findProgramAddressSync(bondingCurveSeeds, new PublicKey(X_TOKEN_PROGRAM_ADDRESS));
 
-      // Generate PDAs and keys (adjust based on your program logic)
-      const mintKeypair = Keypair.generate() // New mint account
-      const bondingCurveSeeds = [mintKeypair.publicKey.toBytes()] // Example; adjust to your PDA seeds
-      const [bondingCurvePda] = PublicKey.findProgramAddressSync(bondingCurveSeeds, new PublicKey(X_TOKEN_PROGRAM_ADDRESS))
-      console.log(1);
-      // Prepare input for getInitializeInstruction
       const initializeInput: InitializeInput = {
-        authority: { address: userAddressStr as Address } as TransactionSigner,
+        authority: { address: wallets[0].address as Address } as TransactionSigner,
         bondingCurve: bondingCurvePda.toBase58() as Address,
         mint: mintKeypair.publicKey.toBase58() as Address,
-        payer: { address: userAddressStr as Address } as TransactionSigner,
+        payer: { address: wallets[0].address as Address } as TransactionSigner,
+        systemProgram: SystemProgram.programId.toBase58() as Address,
+        tokenProgram: TOKEN_PROGRAM_ID.toBase58() as Address,
         rent: "SysvarRent111111111111111111111111111111111" as Address,
         decimals: 9,
         curveType: 1,
-        feeBasisPoints: 0.05,
+        feeBasisPoints: 50,
+        padding: 0,
         basePrice: 1,
         slope: 1,
-        maxSupply: 100, // Map supply to maxSupply
-        feeRecipient: feeRecipient as Address,
-      }
+        maxSupply: 100,
+        feeRecipient: wallets[0].address as Address,
+      };
 
-      console.log(2);
-      // Get the instruction using Codama-generated function
-      const initializeInstruction = getInitializeInstruction(initializeInput)
-
-      // Convert to web3.js TransactionInstruction
+      const initializeInstruction = getInitializeInstruction(initializeInput);
       const keys = initializeInstruction.accounts.map((meta: AccountMeta<string>) => ({
         pubkey: new PublicKey(meta.address),
         isSigner: meta.role === AccountRole.READONLY_SIGNER || meta.role === AccountRole.WRITABLE_SIGNER,
         isWritable: meta.role === AccountRole.WRITABLE || meta.role === AccountRole.WRITABLE_SIGNER,
-      }))
+      }));
 
-      console.log(3);
-      const programId = new PublicKey(initializeInstruction.programAddress)
-      const data = Buffer.from(initializeInstruction.data)
-      const txInstruction = new TransactionInstruction({ keys, programId, data })
+      const txInstruction = new TransactionInstruction({
+        keys,
+        programId: new PublicKey(initializeInstruction.programAddress),
+        data: Buffer.from(initializeInstruction.data)
+      });
 
-      // Tạo giao dịch
       const transaction = new Transaction();
+      const mintRent = await connection.getMinimumBalanceForRentExemption(MINT_SIZE);
+      const createMintIx = SystemProgram.createAccount({
+        fromPubkey: userAddress,
+        newAccountPubkey: mintKeypair.publicKey,
+        lamports: mintRent + 1_000_000,
+        space: MINT_SIZE,
+        programId: TOKEN_PROGRAM_ID,
+      });
 
-      // Lấy recentBlockhash từ Solana
       const latestBlockhash = await connection.getLatestBlockhash();
       transaction.recentBlockhash = latestBlockhash.blockhash;
-      transaction.feePayer = userAddress; // Đặt feePayer là ví của người dùng
+      transaction.feePayer = userAddress;
+      transaction.add(createMintIx, txInstruction);
+      transaction.partialSign(mintKeypair);
 
-      // Thêm instruction vào giao dịch
-      transaction.add(txInstruction);
-      console.log(4);
+      const receipt = await sendTransaction({ transaction, connection, address: wallets[0].address });
+      await connection.confirmTransaction({
+        signature: receipt.signature,
+        blockhash: latestBlockhash.blockhash,
+        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+      }, "confirmed");
 
-      // Add mint creation or other instructions if needed (e.g., metadata)
-      // Note: For metadata (name, symbol, description, logo), you may need to:
-      // 1. Upload logo to IPFS/Arweave.
-      // 2. Create metadata JSON and upload.
-      // 3. Call Token Metadata program's update_metadata instruction.
-      // This is not included here; add separately using @metaplex-foundation/mpl-token-metadata or similar.
-
-      // Send the transaction using Privy's sendTransaction
-      const receipt = await sendTransaction({
-        transaction: transaction,
-        connection: connection,
-        address: wallets[0].address, // Optional: Specify the wallet to use for signing
-      })
-
-      console.log(5);
-
-      console.log("Transaction sent with signature:", receipt.signature)
-      alert("Token created successfully!")
-    } catch (error) {
-      console.error("Error creating token:", error)
-      alert("Failed to create token. Check console for details.")
+      console.log("Token created:", receipt.signature);
+    } catch (error: any) {
+      console.error("Error:", error?.message || error);
     }
-  }
+  };
 
   return (
     <div className="space-y-6">
