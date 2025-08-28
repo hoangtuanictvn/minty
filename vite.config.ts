@@ -3,9 +3,10 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react-swc';
 import path from 'path';
 import { NodeGlobalsPolyfillPlugin } from '@esbuild-plugins/node-globals-polyfill'
+import { nodePolyfills } from 'vite-plugin-node-polyfills';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), nodePolyfills()],
   resolve: {
     extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
     alias: {
@@ -65,11 +66,11 @@ export default defineConfig({
         global: 'globalThis'
       },
       // Enable esbuild polyfill plugins
-      plugins: [
-        NodeGlobalsPolyfillPlugin({
-          buffer: true
-        })
-      ]
+      // plugins: [
+      //   NodeGlobalsPolyfillPlugin({
+      //     buffer: true
+      //   })
+      // ]
     }
   },
   define: {

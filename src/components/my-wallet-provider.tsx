@@ -11,9 +11,9 @@ export default function MyWalletProvider({ children }: PropsWithChildren) {
                     theme: "dark",
                     // logo: env.NEXT_PUBLIC_APP_URL + "/logo.svg",
                     walletList: ["phantom"],
-                    walletChainType: "ethereum-and-solana",
+                    walletChainType: "solana-only",
                 },
-                loginMethods: ["wallet"],
+                loginMethods: ["wallet", "twitter"],
                 embeddedWallets: {
                     solana: {
                         createOnLogin: 'users-without-wallets', // mặc định là 'all-users'

@@ -17,11 +17,12 @@ export default function App() {
     usePrivy();
   const { connectWallet } = useConnectWallet();
   const [walletAddress, setWalletAddress] = useState('');
-  const [selectedToken, setSelectedToken] = useState(null);
+  const [selectedToken, setSelectedToken] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState<'tokens' | 'trading' | 'leaderboard' | 'profile'>('tokens');
 
   const connectPhantomWallet = async () => {
     try {
-      login({ loginMethods: ['wallet'] })
+      login()
       setWalletAddress(wallets[0].address)
       console.log(wallets[0].address);
 
@@ -35,6 +36,23 @@ export default function App() {
     setWalletAddress('');
   };
 
+
+  console.log(user);
+
+  const handleSelectToken = useCallback((t: any) => {
+    // Map dữ liệu token onchain sang format TradingInterface đang dùng
+    const mapped = {
+      name: `Mint ${t.tokenMint?.slice(0, 6)}...${t.tokenMint?.slice(-4)}`,
+      symbol: (t.tokenMint ? t.tokenMint.slice(0, 4) : 'TKN').toUpperCase(),
+      price: t.basePrice ?? t.price ?? 0,
+      change24h: t.change24h ?? 0,
+      mint: t.tokenMint,
+      authority: t.authority,
+      raw: t,
+    };
+    setSelectedToken(mapped);
+    setActiveTab('trading');
+  }, []);
 
   return (
 
@@ -80,7 +98,7 @@ export default function App() {
 
       {/* Main Content */}
       <main className="container mx-auto px-4 py-8">
-        <Tabs defaultValue="tokens" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="space-y-6">
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="tokens" className="flex items-center space-x-2">
               <Coins className="h-4 w-4" />
@@ -103,7 +121,7 @@ export default function App() {
           <TabsContent value="tokens">
             <TokenList
               authenticated={authenticated}
-              onSelectToken={setSelectedToken}
+              onSelectToken={handleSelectToken}
             />
           </TabsContent>
 
