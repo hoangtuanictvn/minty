@@ -39,6 +39,12 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
     return pda;
   };
 
+  const deriveTreasuryPda = (mint: PublicKey) => {
+    const seeds = [Buffer.from('treasury'), mint.toBuffer()];
+    const [pda] = PublicKey.findProgramAddressSync(seeds, new PublicKey(X_TOKEN_PROGRAM_ADDRESS));
+    return pda;
+  };
+
   async function fetchBondingCurveState(connection: Connection, bondingCurve: PublicKey) {
     const info = await connection.getAccountInfo(bondingCurve);
     if (!info || !info.data) throw new Error('Bonding curve account not found');
@@ -209,6 +215,9 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
       const feeRecipient = (token.raw?.feeRecipient || token.feeRecipient || state.feeRecipientPk?.toBase58?.()) as string | undefined;
       if (!feeRecipient) throw new Error('Missing fee recipient');
 
+      // Treasury PDA (system-owned) theo seeds ["treasury", mint]
+      const treasuryPda = deriveTreasuryPda(mint);
+
       const ixCodama = getBuyTokensInstruction({
         buyer: { address: wallets[0].address as Address } as TransactionSigner,
         bondingCurve: bondingCurve.toBase58() as Address,
@@ -220,6 +229,7 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
         associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID.toBase58() as Address,
         tokenAmount: tokenAmountUnits,
         maxSolAmount: maxSolLamportsBI,
+        treasury: treasuryPda.toBase58() as Address,
       });
 
       const keys = ixCodama.accounts.map((meta: AccountMeta<string>) => ({
@@ -229,7 +239,11 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
       }));
       if (keys[0] && keys[0].pubkey.equals(buyerPubkey)) keys[0].isSigner = true;
 
-      const ix = new TransactionInstruction({ keys, programId: new PublicKey(ixCodama.programAddress), data: Buffer.from(ixCodama.data) });
+      const ix = new TransactionInstruction({
+        keys,
+        programId: new PublicKey(ixCodama.programAddress),
+        data: Buffer.from(ixCodama.data) // Sử dụng data gốc 17 bytes (có discriminator)
+      });
 
       const tx = new Transaction();
       const latestBlockhash = await connection.getLatestBlockhash();
@@ -273,6 +287,14 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
       const sellerPubkey = new PublicKey(wallets[0].address);
       const sellerAta = getAssociatedTokenAddressSync(mint, sellerPubkey);
 
+      // Kiểm tra balance của ví test
+      const tokenBalance = await connection.getTokenAccountBalance(sellerAta);
+      console.log('🧪 [TEST] Test wallet token balance:', tokenBalance.value.uiAmount);
+
+      if (!tokenBalance.value.uiAmount || tokenBalance.value.uiAmount < parseFloat(sellAmount)) {
+        throw new Error(`Test wallet has insufficient tokens: ${tokenBalance.value.uiAmount} < ${sellAmount}`);
+      }
+
       // Ước lượng số SOL sẽ nhận được và đặt slippage 10%
       const estLamports = estimateSellLamports(state, tokenAmountUnits);
       let minSolLamportsBI = (estLamports * 90n) / 100n; // 10% slippage
@@ -281,15 +303,28 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
       const feeRecipient = (token.raw?.feeRecipient || token.feeRecipient || state.feeRecipientPk?.toBase58?.()) as string | undefined;
       if (!feeRecipient) throw new Error('Missing fee recipient');
 
+      // Treasury PDA (system-owned)
+      const treasuryPda = deriveTreasuryPda(mint);
+
+      console.log('[SELL] Creating sellTokens instruction...');
+
       const ixCodama = getSellTokensInstruction({
-        seller: { address: wallets[0].address as Address } as TransactionSigner,
+        seller: { address: sellerPubkey.toBase58() } as any,
         bondingCurve: bondingCurve.toBase58() as Address,
         mint: mint.toBase58() as Address,
         sellerTokenAccount: sellerAta.toBase58() as Address,
+        treasury: treasuryPda.toBase58() as Address,
         feeRecipient: feeRecipient as Address,
         tokenProgram: TOKEN_PROGRAM_ID.toBase58() as Address,
+        systemProgram: SystemProgram.programId.toBase58() as Address,
         tokenAmount: tokenAmountUnits,
         minSolAmount: minSolLamportsBI,
+      });
+
+      console.log('[SELL] Instruction data:', {
+        length: ixCodama.data.length,
+        hex: Buffer.from(ixCodama.data).toString('hex'),
+        accountsCount: ixCodama.accounts.length
       });
 
       const keys = ixCodama.accounts.map((meta: AccountMeta<string>) => ({
@@ -297,9 +332,19 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
         isSigner: meta.role === AccountRole.READONLY_SIGNER || meta.role === AccountRole.WRITABLE_SIGNER,
         isWritable: meta.role === AccountRole.WRITABLE || meta.role === AccountRole.WRITABLE_SIGNER,
       }));
-      if (keys[0] && keys[0].pubkey.equals(sellerPubkey)) keys[0].isSigner = true;
 
-      const ix = new TransactionInstruction({ keys, programId: new PublicKey(ixCodama.programAddress), data: Buffer.from(ixCodama.data) });
+      // Đảm bảo seller là signer
+      if (keys[0] && keys[0].pubkey.equals(sellerPubkey)) {
+        keys[0].isSigner = true;
+      }
+
+      console.log('[SELL] Account keys:', keys.map((k, i) => `${i}: ${k.pubkey.toBase58()} (signer: ${k.isSigner}, writable: ${k.isWritable})`));
+
+      const ix = new TransactionInstruction({
+        keys,
+        programId: new PublicKey(ixCodama.programAddress),
+        data: Buffer.from(ixCodama.data)
+      });
 
       const tx = new Transaction();
       const latestBlockhash = await connection.getLatestBlockhash();
@@ -308,16 +353,28 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
       tx.add(ix);
 
       const receipt = await sendTransaction({ transaction: tx, connection, address: wallets[0].address });
-      await connection.confirmTransaction({ signature: receipt.signature, blockhash: latestBlockhash.blockhash, lastValidBlockHeight: latestBlockhash.lastValidBlockHeight }, 'confirmed');
-
+      await connection.confirmTransaction({
+        signature: receipt.signature,
+        blockhash: latestBlockhash.blockhash,
+        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight
+      }, 'confirmed');
       toast.success('Sell order sent successfully.');
       setSellAmount('');
 
       try {
         const refreshed = await fetchBondingCurveState(connection, bondingCurve);
-        setCurrentPriceSol(computeCurrentPriceSol({ basePriceLamports: refreshed.basePriceLamports, slope: refreshed.slope, totalSupply: refreshed.totalSupply, curveType: refreshed.curveType }));
+        setCurrentPriceSol(computeCurrentPriceSol({
+          basePriceLamports: refreshed.basePriceLamports,
+          slope: refreshed.slope,
+          totalSupply: refreshed.totalSupply,
+          curveType: refreshed.curveType
+        }));
       } catch { }
     } catch (e: any) {
+      console.error('[SELL] error:', e);
+      if (e.logs) {
+        console.error('[SELL] Program logs:', e.logs);
+      }
       toast.error(String(e?.message || e));
     }
   };

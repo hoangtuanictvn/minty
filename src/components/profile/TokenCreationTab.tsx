@@ -30,10 +30,15 @@ export function TokenCreationTab({ authenticated }: TokenCreationTabProps) {
             const bondingCurveSeeds = [Buffer.from("x_token"), mintKeypair.publicKey.toBuffer()];
             const [bondingCurvePda] = PublicKey.findProgramAddressSync(bondingCurveSeeds, new PublicKey(X_TOKEN_PROGRAM_ADDRESS));
 
+            // Create treasury PDA for holding SOL (must match program seeds)
+            const treasurySeeds = [Buffer.from("treasury"), mintKeypair.publicKey.toBuffer()];
+            const [treasuryPda] = PublicKey.findProgramAddressSync(treasurySeeds, new PublicKey(X_TOKEN_PROGRAM_ADDRESS));
+
             const initializeInput: InitializeInput = {
                 authority: { address: wallets[0].address as Address } as TransactionSigner,
                 bondingCurve: bondingCurvePda.toBase58() as Address,
                 mint: mintKeypair.publicKey.toBase58() as Address,
+                treasury: treasuryPda.toBase58() as Address, // Treasury PDA for holding SOL
                 payer: { address: wallets[0].address as Address } as TransactionSigner,
                 systemProgram: SystemProgram.programId.toBase58() as Address,
                 tokenProgram: TOKEN_PROGRAM_ID.toBase58() as Address,
@@ -116,6 +121,7 @@ export function TokenCreationTab({ authenticated }: TokenCreationTabProps) {
                         <li>• Base Price: 8 lamports per base unit (very low)</li>
                         <li>• Slope: 1,000 (gradual price increase)</li>
                         <li>• Max Supply: 100 tokens</li>
+                        <li>• Treasury: Program-controlled PDA (holds SOL for bonding curve)</li>
                     </ul>
                 </div>
 
