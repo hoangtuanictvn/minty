@@ -3,6 +3,7 @@ import { Alert, AlertDescription } from './ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { AlertCircle } from 'lucide-react';
 import { ProfileTab, VerificationTab, StatisticsTab, TokenCreationTab } from './profile';
+import { usePrivy } from "@privy-io/react-auth";
 
 interface ProfileVerificationProps {
   authenticated: boolean;
@@ -10,13 +11,9 @@ interface ProfileVerificationProps {
 }
 
 export function ProfileVerification({ authenticated, walletAddress }: ProfileVerificationProps) {
-  const [isVerified, setIsVerified] = useState(false);
-  const [xHandle, setXHandle] = useState('');
+  const { user } = usePrivy();
 
-  const handleVerificationComplete = (handle: string) => {
-    setXHandle(handle);
-    setIsVerified(handle !== '');
-  };
+  const twitterUsername = user?.twitter?.username
 
   return (
     <div className="space-y-6">
@@ -30,23 +27,23 @@ export function ProfileVerification({ authenticated, walletAddress }: ProfileVer
       )}
 
       <Tabs defaultValue="profile" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="profile">Profile</TabsTrigger>
-          <TabsTrigger value="verification">Verification</TabsTrigger>
-          <TabsTrigger value="stats">Statistics</TabsTrigger>
+          {/* <TabsTrigger value="verification">Verification</TabsTrigger> */}
           <TabsTrigger value="create">Create Token</TabsTrigger>
+          <TabsTrigger value="stats">Statistics</TabsTrigger>
+
         </TabsList>
 
         <TabsContent value="profile">
           <ProfileTab
             authenticated={authenticated}
             walletAddress={walletAddress}
-            isVerified={isVerified}
-            xHandle={xHandle}
+            twitterUsername={twitterUsername}
           />
         </TabsContent>
 
-        <TabsContent value="verification">
+        {/* <TabsContent value="verification">
           <VerificationTab
             authenticated={authenticated}
             walletAddress={walletAddress}
@@ -54,14 +51,14 @@ export function ProfileVerification({ authenticated, walletAddress }: ProfileVer
             xHandle={xHandle}
             onVerificationComplete={handleVerificationComplete}
           />
+        </TabsContent> */}
+
+        <TabsContent value="create">
+          <TokenCreationTab authenticated={authenticated} />
         </TabsContent>
 
         <TabsContent value="stats">
           <StatisticsTab authenticated={authenticated} />
-        </TabsContent>
-
-        <TabsContent value="create">
-          <TokenCreationTab authenticated={authenticated} />
         </TabsContent>
       </Tabs>
     </div>

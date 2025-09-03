@@ -52,15 +52,16 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
     const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
     const tokenMint = new PublicKey(data.subarray(32, 64));
     const feeRecipientPk = new PublicKey(data.subarray(64, 96));
-    const solReserveLamports = Number(view.getBigUint64(96, true));
-    const tokenReserve = Number(view.getBigUint64(104, true));
-    const totalSupply = Number(view.getBigUint64(112, true));
-    const basePriceLamports = Number(view.getBigUint64(120, true));
-    const slope = Number(view.getBigUint64(128, true));
-    const maxSupply = Number(view.getBigUint64(136, true));
-    const feeBasisPoints = view.getUint16(144, true);
-    const curveType = data[146];
-    const isInitialized = data[147] === 1;
+    // Offsets theo struct on-chain: owner [96..128), sau đó đến các u64/u16/u8
+    const solReserveLamports = Number(view.getBigUint64(128, true));
+    const tokenReserve = Number(view.getBigUint64(136, true));
+    const totalSupply = Number(view.getBigUint64(144, true));
+    const basePriceLamports = Number(view.getBigUint64(152, true));
+    const slope = Number(view.getBigUint64(160, true));
+    const maxSupply = Number(view.getBigUint64(168, true));
+    const feeBasisPoints = view.getUint16(176, true);
+    const curveType = data[178];
+    const isInitialized = data[179] === 1;
     return { tokenMint, feeRecipientPk, solReserveLamports, tokenReserve, totalSupply, basePriceLamports, slope, maxSupply, feeBasisPoints, curveType, isInitialized };
   }
 

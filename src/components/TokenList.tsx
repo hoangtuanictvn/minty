@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback } from './ui/avatar';
 import { Search, TrendingUp, TrendingDown, Twitter, ExternalLink, Sparkles, Loader2 } from 'lucide-react';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { X_TOKEN_PROGRAM_ADDRESS } from '../lib/xToken/programs';
+import { fetchUserProfile } from '../lib/profile';
 
 interface TokenListProps {
   authenticated: boolean;
@@ -18,6 +19,7 @@ type OnchainToken = {
   tokenMint: string;
   authority: string;
   feeRecipient: string;
+  owner?: string; // Owner username from token data
   solReserve: number; // in SOL
   tokenReserve: number;
   totalSupply: number;
@@ -26,6 +28,11 @@ type OnchainToken = {
   maxSupply: number;
   feeBasisPoints: number;
   curveType: number;
+  username?: string; // Username from user profile
+  bio?: string; // Bio from user profile
+  // Calculated fields
+  currentPrice: number; // Current price per token in SOL
+  marketCap: number; // Market cap in SOL
 };
 
 export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
@@ -51,27 +58,40 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
 
         const parsed: OnchainToken[] = accounts.map(a => {
           const data = a.account.data as Buffer;
-          // Decode struct XToken
+          // Decode struct XToken (updated with owner field)
           const authority = new PublicKey(data.subarray(0, 32)).toBase58();
           const tokenMintPk = new PublicKey(data.subarray(32, 64));
           const feeRecipient = new PublicKey(data.subarray(64, 96)).toBase58();
+
+          // Decode owner field (32 bytes starting at offset 96)
+          const ownerBytes = data.subarray(96, 128);
+          const ownerLength = ownerBytes[0];
+          const ownerString = ownerLength > 0 && ownerLength <= 31
+            ? Buffer.from(ownerBytes.subarray(1, 1 + ownerLength)).toString('utf8')
+            : '';
+
           const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-          const solReserveLamports = Number(view.getBigUint64(96, true));
-          const tokenReserve = Number(view.getBigUint64(104, true));
-          const totalSupply = Number(view.getBigUint64(112, true));
-          const basePriceLamports = Number(view.getBigUint64(120, true));
-          const slope = Number(view.getBigUint64(128, true));
-          const maxSupply = Number(view.getBigUint64(136, true));
-          const feeBasisPoints = view.getUint16(144, true);
-          const curveType = data[146];
-          const isInitialized = data[147] === 1;
+          const solReserveLamports = Number(view.getBigUint64(128, true));
+          const tokenReserve = Number(view.getBigUint64(136, true));
+          const totalSupply = Number(view.getBigUint64(144, true));
+          const basePriceLamports = Number(view.getBigUint64(152, true));
+          const slope = Number(view.getBigUint64(160, true));
+          const maxSupply = Number(view.getBigUint64(168, true));
+          const feeBasisPoints = view.getUint16(176, true);
+          const curveType = data[178];
+          const isInitialized = data[179] === 1;
           if (!isInitialized) throw new Error('uninitialized');
+
+          // Calculate current price and market cap
+          const currentPrice = basePriceLamports / 1_000_000_000 + (slope * totalSupply) / (1_000_000_000 * 1_000_000_000);
+          const marketCap = currentPrice * totalSupply / 1_000_000_000; // Convert from base units to tokens
 
           return {
             id: a.pubkey.toBase58(),
             tokenMint: tokenMintPk.toBase58(),
             authority,
             feeRecipient,
+            owner: ownerString || undefined,
             solReserve: solReserveLamports / 1_000_000_000,
             tokenReserve,
             totalSupply,
@@ -80,10 +100,30 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
             maxSupply,
             feeBasisPoints,
             curveType,
+            currentPrice,
+            marketCap,
           };
         });
 
-        setTokens(parsed);
+        // Fetch usernames and bios for all tokens
+        const tokensWithProfiles = await Promise.all(
+          parsed.map(async (token) => {
+            try {
+              const authorityPk = new PublicKey(token.authority);
+              const profile = await fetchUserProfile(connection, authorityPk, programId);
+              return {
+                ...token,
+                username: profile?.username || undefined,
+                bio: profile?.bio || undefined,
+              };
+            } catch (error) {
+              console.warn(`Failed to fetch profile for authority ${token.authority}:`, error);
+              return token;
+            }
+          })
+        );
+
+        setTokens(tokensWithProfiles);
       } catch (e: any) {
         console.error('Failed to load onchain tokens:', e?.message || e);
         setError('Không tải được danh sách token onchain.');
@@ -100,8 +140,8 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
 
 
   const filteredTokens = tokens.filter(token => {
-    const name = `TOKEN-${token.tokenMint.slice(0, 4)}`;
-    const display = `Mint ${token.tokenMint.slice(0, 6)}...${token.tokenMint.slice(-4)}`;
+    const name = `${token.tokenMint.slice(0, 4)}`;
+    const display = token.owner || token.username || `Mint ${token.tokenMint.slice(0, 6)}...${token.tokenMint.slice(-4)}`;
     const handle = `@${token.authority.slice(0, 6)}`;
     const hay = `${name} ${display} ${handle}`.toLowerCase();
     const matchesSearch = hay.includes(searchTerm.toLowerCase());
@@ -122,7 +162,6 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
           <h2 className="text-3xl font-bold bg-gradient-to-r from-green-600 to-emerald-500 bg-clip-text text-transparent">
             Onchain Token Creators
           </h2>
-          <p className="text-muted-foreground">Đang tải danh sách token từ blockchain...</p>
         </div>
         <div className="flex justify-center items-center py-12">
           <div className="flex items-center space-x-2">
@@ -186,16 +225,18 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredTokens.map((token) => {
-            const tokenName = `TOKEN-${token.tokenMint.slice(0, 4)}`;
-            const displayName = `Mint ${token.tokenMint.slice(0, 6)}...${token.tokenMint.slice(-4)}`;
-            const xHandle = `@${token.authority.slice(0, 6)}`;
+            const tokenName = `${token.tokenMint.slice(0, 4)}...${token.tokenMint.slice(-4)}`;
+            const displayName = token.username || `${token.tokenMint.slice(0, 6)}...${token.tokenMint.slice(-4)}`;
+            const xHandle = `@${token.owner}`;
             return (
               <Card key={token.id} className="hover:shadow-lg transition-all duration-200 hover:scale-[1.02]">
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3">
                       <div className={`h-12 w-12 rounded-full bg-gradient-to-r from-blue-500 to-cyan-400 flex items-center justify-center relative`}>
-                        <span className="text-white font-bold">{tokenName[0]}</span>
+                        <span className="text-white font-bold">
+                          {(token.owner || token.username) ? (token.owner || token.username)![0].toUpperCase() : tokenName[0]}
+                        </span>
                       </div>
                       <div className="flex-1 min-w-0">
                         <CardTitle className="text-lg truncate">{displayName}</CardTitle>
@@ -215,14 +256,25 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
                       <span>${tokenName}</span>
                     </Badge>
                   </div>
+                  {token.bio && (
+                    <p className="text-sm text-muted-foreground mt-2">{token.bio}</p>
+                  )}
                 </CardHeader>
 
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">Base Price (SOL)</span>
-                      <span className="font-medium">{token.basePrice.toFixed(6)}</span>
+                      <span className="text-sm text-muted-foreground">Current Price</span>
+                      <span className="font-medium text-green-600">{token.currentPrice.toFixed(6)} SOL</span>
                     </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Market Cap</span>
+                      <span className="font-medium text-blue-600">{token.marketCap.toFixed(4)} SOL</span>
+                    </div>
+                    {/* <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Base Price</span>
+                      <span className="text-sm font-medium">{token.basePrice.toFixed(6)} SOL</span>
+                    </div> */}
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">Total Supply</span>
                       <span className="text-sm font-medium">{token.totalSupply.toLocaleString()}</span>

@@ -7,25 +7,19 @@ import { Leaderboard } from './components/Leaderboard';
 import { TradingInterface } from './components/TradingInterface';
 import { ProfileVerification } from './components/ProfileVerification';
 import { Wallet, Trophy, Coins, User, ExternalLink, Sparkles } from 'lucide-react';
-import MyWalletProvider from "./components/my-wallet-provider";
-import { AuthProvider, useAuth } from "./contexts/AuthContext";
-import { useConnectWallet, useLogin, usePrivy, useSolanaWallets } from "@privy-io/react-auth";
+import { useConnectWallet, usePrivy, useSolanaWallets } from "@privy-io/react-auth";
 
 export default function App() {
-  const { wallets, createWallet } = useSolanaWallets();
-  const { user, ready, authenticated, login, getAccessToken, logout } =
+  const { wallets } = useSolanaWallets();
+  const { user, ready, authenticated, login, logout } =
     usePrivy();
-  const { connectWallet } = useConnectWallet();
-  const [walletAddress, setWalletAddress] = useState('');
   const [selectedToken, setSelectedToken] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'tokens' | 'trading' | 'leaderboard' | 'profile'>('tokens');
+  const walletAddress = wallets[0]?.address
 
   const connectPhantomWallet = async () => {
     try {
       login()
-      setWalletAddress(wallets[0].address)
-      console.log(wallets[0].address);
-
     } catch (error) {
       console.error('Error connecting wallet:', error);
     }
@@ -33,14 +27,12 @@ export default function App() {
 
   const disconnectWallet = () => {
     logout()
-    setWalletAddress('');
   };
 
 
   console.log(user);
 
   const handleSelectToken = useCallback((t: any) => {
-    // Map dữ liệu token onchain sang format TradingInterface đang dùng
     const mapped = {
       name: `Mint ${t.tokenMint?.slice(0, 6)}...${t.tokenMint?.slice(-4)}`,
       symbol: (t.tokenMint ? t.tokenMint.slice(0, 4) : 'TKN').toUpperCase(),
@@ -79,7 +71,7 @@ export default function App() {
                 <div className="flex items-center space-x-2">
                   <Badge variant="secondary" className="flex items-center space-x-1">
                     <Wallet className="h-3 w-3" />
-                    <span>{`${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`}</span>
+                    <span>{`${wallets[0]?.address.slice(0, 6)}...${wallets[0]?.address.slice(-4)}`}</span>
                   </Badge>
                   <Button variant="outline" onClick={disconnectWallet}>
                     Disconnect

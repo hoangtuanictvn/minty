@@ -17,11 +17,10 @@ import { AccountMeta, AccountRole, Address, TransactionSigner } from "@solana/ki
 interface ProfileTabProps {
     authenticated: boolean;
     walletAddress: string;
-    isVerified: boolean;
-    xHandle: string;
+    twitterUsername: string;
 }
 
-export function ProfileTab({ authenticated, walletAddress, isVerified, xHandle }: ProfileTabProps) {
+export function ProfileTab({ authenticated, walletAddress, twitterUsername }: ProfileTabProps) {
     const { sendTransaction } = useSendTransaction();
     const { wallets } = useSolanaWallets();
 
@@ -193,7 +192,7 @@ export function ProfileTab({ authenticated, walletAddress, isVerified, xHandle }
                             </div>
                         </div>
 
-                        <div className="flex justify-between items-center">
+                        {/* <div className="flex justify-between items-center">
                             <span className="text-muted-foreground">X Verification</span>
                             <Badge variant={isVerified ? "default" : "secondary"}>
                                 {isVerified ? (
@@ -208,12 +207,12 @@ export function ProfileTab({ authenticated, walletAddress, isVerified, xHandle }
                                     </div>
                                 )}
                             </Badge>
-                        </div>
+                        </div> */}
 
-                        {isVerified && xHandle && (
+                        {twitterUsername && (
                             <div className="flex justify-between items-center">
-                                <span className="text-muted-foreground">X Handle</span>
-                                <span className="text-blue-500">@{xHandle}</span>
+                                <span className="text-muted-foreground">X Username</span>
+                                <span className="text-blue-500">@{twitterUsername}</span>
                             </div>
                         )}
                     </div>
@@ -226,7 +225,7 @@ export function ProfileTab({ authenticated, walletAddress, isVerified, xHandle }
                                 <span className="text-sm">Wallet Connected</span>
                             </div>
                             <div className="flex items-center space-x-2">
-                                {isVerified ? (
+                                {twitterUsername ? (
                                     <CheckCircle className="h-4 w-4 text-green-500" />
                                 ) : (
                                     <AlertCircle className="h-4 w-4 text-yellow-500" />

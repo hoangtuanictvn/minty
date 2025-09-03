@@ -3,11 +3,24 @@ import { Button } from '../ui/button';
 import { toast } from 'react-toastify';
 import { useSendTransaction, useSolanaWallets } from "@privy-io/react-auth/solana";
 import { Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction } from "@solana/web3.js";
+import { usePrivy } from "@privy-io/react-auth";
 import { X_TOKEN_PROGRAM_ADDRESS } from "../../lib/xToken/programs";
 import { getInitializeInstruction, InitializeInput } from "../../lib/xToken/instructions";
 import { AccountMeta, AccountRole, Address, TransactionSigner } from "@solana/kit";
 import { Buffer } from "buffer";
 import { TOKEN_PROGRAM_ID, MINT_SIZE } from "@solana/spl-token";
+
+// Helper function to convert username to 32-byte array
+const encodeOwner = (username: string | undefined): number[] => {
+    const name = username || '';
+    const bytes = Array.from(Buffer.from(name, 'utf8'));
+    const padded = new Array(32).fill(0);
+    padded[0] = Math.min(bytes.length, 31); // Length in first byte
+    for (let i = 0; i < Math.min(bytes.length, 31); i++) {
+        padded[i + 1] = bytes[i];
+    }
+    return padded;
+};
 
 interface TokenCreationTabProps {
     authenticated: boolean;
@@ -16,6 +29,9 @@ interface TokenCreationTabProps {
 export function TokenCreationTab({ authenticated }: TokenCreationTabProps) {
     const { sendTransaction } = useSendTransaction();
     const { wallets } = useSolanaWallets();
+    const { user } = usePrivy();
+
+    const twitterUsername = user?.twitter?.username;
 
     const createToken = async () => {
         try {
@@ -46,10 +62,10 @@ export function TokenCreationTab({ authenticated }: TokenCreationTabProps) {
                 decimals: 9,
                 curveType: 0, // Linear curve for visible price changes
                 feeBasisPoints: 50,
-                padding: 0,
-                basePrice: 8, // 8 lamports per base unit (very low base price)
-                slope: 1000, // Giảm slope xuống 1000 để giá tăng từ từ
-                maxSupply: 100_000_000_000, // 100 tokens (100 * 1e9 base units)
+                owner: encodeOwner(twitterUsername),
+                basePrice: 1, // 0.001 SOL
+                slope: 1, // 0.001 SOL increase per token (tăng chậm hơn)
+                maxSupply: 100_000_000_000_000_000, // 100M * 1e9 base units
                 feeRecipient: wallets[0].address as Address,
             };
 
@@ -118,9 +134,9 @@ export function TokenCreationTab({ authenticated }: TokenCreationTabProps) {
                         <li>• Decimals: 9</li>
                         <li>• Curve Type: Linear (price changes with supply)</li>
                         <li>• Fee: 0.5%</li>
-                        <li>• Base Price: 8 lamports per base unit (very low)</li>
-                        <li>• Slope: 1,000 (gradual price increase)</li>
-                        <li>• Max Supply: 100 tokens</li>
+                        <li>• Base Price: 0.001 SOL per token (1,000,000 lamports)</li>
+                        <li>• Slope: 0.001 SOL increase per token (1,000,000 lamports)</li>
+                        <li>• Max Supply: 100M tokens (100,000,000 * 1e9 base units)</li>
                         <li>• Treasury: Program-controlled PDA (holds SOL for bonding curve)</li>
                     </ul>
                 </div>
