@@ -4,6 +4,7 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Input } from './ui/input';
 import { Avatar, AvatarFallback } from './ui/avatar';
+import { Skeleton } from './ui/skeleton';
 import { Search, TrendingUp, TrendingDown, Twitter, ExternalLink, Sparkles, Loader2 } from 'lucide-react';
 import { Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction } from '@solana/web3.js';
 import { X_TOKEN_PROGRAM_ADDRESS } from '../lib/xToken/programs';
@@ -51,6 +52,7 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
   const [tokens, setTokens] = useState<OnchainToken[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshNonce, setRefreshNonce] = useState(0);
 
   useEffect(() => {
     const fetchTokens = async () => {
@@ -144,7 +146,7 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
     };
 
     fetchTokens();
-  }, []);
+  }, [refreshNonce]);
 
   console.log(tokens);
 
@@ -204,10 +206,10 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
         rent: 'SysvarRent111111111111111111111111111111111' as Address,
         decimals: 9,
         curveType: 0,
-        feeBasisPoints: 50,
+        feeBasisPoints: 25,
         owner: encodeOwner(twitterUsername),
-        basePrice: 1,
-        slope: 1,
+        basePrice: 100,
+        slope: 100,
         maxSupply: 100_000_000_000_000_000,
         feeRecipient: wallets[0].address as Address,
       };
@@ -248,7 +250,10 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
         lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
       }, 'confirmed');
 
+      console.log("Token created:", receipt.signature);
       toast.success('Token created successfully.');
+      // Refetch token list after successful creation
+      setRefreshNonce((n) => n + 1);
     } catch (error: any) {
       toast.error(String(error?.message || error));
     }
@@ -262,11 +267,41 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
             Onchain Token Creators
           </h2>
         </div>
-        <div className="flex justify-center items-center py-12">
-          <div className="flex items-center space-x-2">
-            <Loader2 className="h-6 w-6 animate-spin" />
-            <span>Loading tokens...</span>
-          </div>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Card key={i}>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <Skeleton className="h-12 w-12 rounded-full" />
+                    <div className="space-y-2 w-40">
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-3 w-24" />
+                    </div>
+                  </div>
+                  <Skeleton className="h-6 w-20 rounded" />
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-4 w-16" />
+                </div>
+                <div className="flex justify-between items-center">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-4 w-20" />
+                </div>
+                <div className="flex justify-between items-center">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-4 w-24" />
+                </div>
+                <div className="flex gap-2 pt-2">
+                  <Skeleton className="h-9 w-full" />
+                  <Skeleton className="h-9 w-9" />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       </div>
     );

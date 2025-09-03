@@ -27,11 +27,38 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
   const [estTotalSol, setEstTotalSol] = useState<number>(0);
   const [estSellSol, setEstSellSol] = useState<number>(0);
   const [isLoadingPrice, setIsLoadingPrice] = useState<boolean>(false);
+  const [walletSol, setWalletSol] = useState<number | null>(null);
+  const [walletToken, setWalletToken] = useState<number | null>(null);
+  const [debouncedBuyAmount, setDebouncedBuyAmount] = useState<string>('');
+  const [debouncedSellAmount, setDebouncedSellAmount] = useState<string>('');
   const { sendTransaction } = useSendTransaction();
   const { wallets } = useSolanaWallets();
 
   const defaultToken = { name: 'SolanaToken', symbol: 'TKN', price: 0, change24h: 0 };
   const token = selectedToken || defaultToken;
+
+  async function refreshBalances(connection: Connection, owner: PublicKey, mint?: PublicKey) {
+    try {
+      const solLamports = await connection.getBalance(owner, { commitment: 'confirmed' });
+      setWalletSol(solLamports / 1_000_000_000);
+    } catch {
+      setWalletSol(null);
+    }
+    try {
+      if (mint) {
+        const ata = getAssociatedTokenAddressSync(mint, owner);
+        const info = await connection.getAccountInfo(ata);
+        if (!info) {
+          setWalletToken(0);
+        } else {
+          const bal = await connection.getTokenAccountBalance(ata);
+          setWalletToken(bal.value.uiAmount || 0);
+        }
+      }
+    } catch {
+      setWalletToken(null);
+    }
+  }
 
   const deriveBondingCurvePda = (mint: PublicKey) => {
     const seeds = [Buffer.from('x_token'), mint.toBuffer()];
@@ -93,9 +120,8 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
     } else if (state.curveType === 2) {
       unitPrice = base + (base * avg) / 1_000_000_000_000n;
     }
-    let total = unitPrice * buyUnits;
+    let total = (unitPrice * buyUnits) / oneE9n;
     if (state.feeBasisPoints) total += (total * BigInt(state.feeBasisPoints)) / 10000n;
-    // Trả về lamports, UI sẽ chia cho 1e9 để hiển thị SOL
     return total;
   }
 
@@ -104,7 +130,7 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
     const base = BigInt(state.basePriceLamports);
     const slope = BigInt(state.slope ?? 0);
     const start = BigInt(state.totalSupply);
-    const end = start - sellUnits; // Giảm supply khi bán
+    const end = start - sellUnits;
     const avg = (start + end) / 2n;
     let unitPrice = base;
     if (state.curveType === 0) {
@@ -114,12 +140,21 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
     } else if (state.curveType === 2) {
       unitPrice = base + (base * avg) / 1_000_000_000_000n;
     }
-    let total = unitPrice * sellUnits;
-    // Khi bán, người bán phải trả phí (giảm số SOL nhận được)
+    let total = (unitPrice * sellUnits) / oneE9n;
     if (state.feeBasisPoints) total -= (total * BigInt(state.feeBasisPoints)) / 10000n;
-    // Trả về lamports, UI sẽ chia cho 1e9 để hiển thị SOL
     return total > 0n ? total : 0n;
   }
+
+  // Debounce user input for buy/sell amounts to avoid excessive RPC calls
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedBuyAmount(buyAmount), 300);
+    return () => clearTimeout(t);
+  }, [buyAmount]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSellAmount(sellAmount), 300);
+    return () => clearTimeout(t);
+  }, [sellAmount]);
 
   useEffect(() => {
     (async () => {
@@ -132,46 +167,20 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
         const state = await fetchBondingCurveState(connection, bondingCurve);
         if (!state.isInitialized || !state.tokenMint.equals(mint)) { setCurrentPriceSol(0); setEstTotalSol(0); return; }
 
-        // Debug log
-        console.log('[PRICE_DEBUG] State:', {
-          basePriceLamports: state.basePriceLamports,
-          slope: state.slope,
-          totalSupply: state.totalSupply,
-          curveType: state.curveType,
-          feeBasisPoints: state.feeBasisPoints
-        });
-
         const priceSol = computeCurrentPriceSol({ basePriceLamports: state.basePriceLamports, slope: state.slope, totalSupply: state.totalSupply, curveType: state.curveType });
         setCurrentPriceSol(priceSol);
 
-        if (buyAmount) {
-          const units = BigInt(Math.floor(parseFloat(buyAmount) * Math.pow(10, 9)));
+        if (debouncedBuyAmount) {
+          const units = BigInt(Math.floor(parseFloat(debouncedBuyAmount) * Math.pow(10, 9)));
           const estLamports = estimateTotalLamports(state, units);
-
-          // Debug log
-          console.log('[PRICE_DEBUG] Buy calculation:', {
-            buyAmount,
-            units: units.toString(),
-            estLamports: estLamports.toString(),
-            estSol: Number(estLamports) / 1_000_000_000
-          });
-
           setEstTotalSol(Number(estLamports) / 1_000_000_000);
         } else {
           setEstTotalSol(0);
         }
 
-        if (sellAmount) {
-          const units = BigInt(Math.floor(parseFloat(sellAmount) * Math.pow(10, 9)));
+        if (debouncedSellAmount) {
+          const units = BigInt(Math.floor(parseFloat(debouncedSellAmount) * Math.pow(10, 9)));
           const estLamports = estimateSellLamports(state, units);
-
-          // Debug log
-          console.log('[PRICE_DEBUG] Sell calculation:', {
-            sellAmount,
-            units: units.toString(),
-            estLamports: estLamports.toString(),
-            estSol: Number(estLamports) / 1_000_000_000
-          });
 
           setEstSellSol(Number(estLamports) / 1_000_000_000);
         } else {
@@ -184,7 +193,35 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
       }
       finally { setIsLoadingPrice(false); }
     })();
-  }, [token?.mint, buyAmount, sellAmount]);
+  }, [token?.mint, debouncedBuyAmount, debouncedSellAmount]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        if (!authenticated || !wallets || wallets.length === 0) { setWalletSol(null); setWalletToken(null); return; }
+        const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
+        const owner = new PublicKey(wallets[0].address);
+        const solLamports = await connection.getBalance(owner, { commitment: 'confirmed' });
+        setWalletSol(solLamports / 1_000_000_000);
+        if (selectedToken?.mint) {
+          const mint = new PublicKey(selectedToken.mint);
+          const ata = getAssociatedTokenAddressSync(mint, owner);
+          const ataInfo = await connection.getAccountInfo(ata);
+          if (!ataInfo) {
+            setWalletToken(0);
+          } else {
+            const bal = await connection.getTokenAccountBalance(ata);
+            setWalletToken(bal.value.uiAmount || 0);
+          }
+        } else {
+          setWalletToken(null);
+        }
+      } catch {
+        setWalletSol(null);
+        setWalletToken(null);
+      }
+    })();
+  }, [authenticated, wallets && wallets[0]?.address, selectedToken?.mint]);
 
   const handleBuy = async () => {
     try {
@@ -208,7 +245,6 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
       const buyerPubkey = new PublicKey(wallets[0].address);
       const buyerAta = getAssociatedTokenAddressSync(mint, buyerPubkey);
 
-      // Ước lượng chính xác theo curve và đặt slippage 10%
       const estLamports = estimateTotalLamports(state, tokenAmountUnits);
       let maxSolLamportsBI = (estLamports * 110n) / 100n; // 10%
       if (maxSolLamportsBI < 1n) maxSolLamportsBI = 1n;
@@ -261,6 +297,7 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
       try {
         const refreshed = await fetchBondingCurveState(connection, bondingCurve);
         setCurrentPriceSol(computeCurrentPriceSol({ basePriceLamports: refreshed.basePriceLamports, slope: refreshed.slope, totalSupply: refreshed.totalSupply, curveType: refreshed.curveType }));
+        await refreshBalances(connection, buyerPubkey, mint);
       } catch { }
     } catch (e: any) {
       toast.error(String(e?.message || e));
@@ -288,15 +325,11 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
       const sellerPubkey = new PublicKey(wallets[0].address);
       const sellerAta = getAssociatedTokenAddressSync(mint, sellerPubkey);
 
-      // Kiểm tra balance của ví test
       const tokenBalance = await connection.getTokenAccountBalance(sellerAta);
-      console.log('🧪 [TEST] Test wallet token balance:', tokenBalance.value.uiAmount);
-
       if (!tokenBalance.value.uiAmount || tokenBalance.value.uiAmount < parseFloat(sellAmount)) {
         throw new Error(`Test wallet has insufficient tokens: ${tokenBalance.value.uiAmount} < ${sellAmount}`);
       }
 
-      // Ước lượng số SOL sẽ nhận được và đặt slippage 10%
       const estLamports = estimateSellLamports(state, tokenAmountUnits);
       let minSolLamportsBI = (estLamports * 90n) / 100n; // 10% slippage
       if (minSolLamportsBI < 1n) minSolLamportsBI = 1n;
@@ -306,8 +339,6 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
 
       // Treasury PDA (system-owned)
       const treasuryPda = deriveTreasuryPda(mint);
-
-      console.log('[SELL] Creating sellTokens instruction...');
 
       const ixCodama = getSellTokensInstruction({
         seller: { address: sellerPubkey.toBase58() } as any,
@@ -322,24 +353,15 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
         minSolAmount: minSolLamportsBI,
       });
 
-      console.log('[SELL] Instruction data:', {
-        length: ixCodama.data.length,
-        hex: Buffer.from(ixCodama.data).toString('hex'),
-        accountsCount: ixCodama.accounts.length
-      });
-
       const keys = ixCodama.accounts.map((meta: AccountMeta<string>) => ({
         pubkey: new PublicKey(meta.address),
         isSigner: meta.role === AccountRole.READONLY_SIGNER || meta.role === AccountRole.WRITABLE_SIGNER,
         isWritable: meta.role === AccountRole.WRITABLE || meta.role === AccountRole.WRITABLE_SIGNER,
       }));
 
-      // Đảm bảo seller là signer
       if (keys[0] && keys[0].pubkey.equals(sellerPubkey)) {
         keys[0].isSigner = true;
       }
-
-      console.log('[SELL] Account keys:', keys.map((k, i) => `${i}: ${k.pubkey.toBase58()} (signer: ${k.isSigner}, writable: ${k.isWritable})`));
 
       const ix = new TransactionInstruction({
         keys,
@@ -370,6 +392,7 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
           totalSupply: refreshed.totalSupply,
           curveType: refreshed.curveType
         }));
+        await refreshBalances(connection, sellerPubkey, mint);
       } catch { }
     } catch (e: any) {
       console.error('[SELL] error:', e);
@@ -482,11 +505,11 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
             <CardContent className="space-y-3">
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">SOL</span>
-                <span className="font-medium">—</span>
+                <span className="font-medium">{walletSol !== null ? walletSol.toFixed(4) : '—'}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground">{token.symbol}</span>
-                <span className="font-medium">—</span>
+                <span className="font-medium">{walletToken !== null ? walletToken.toFixed(4) : '—'}</span>
               </div>
             </CardContent>
           </Card>
