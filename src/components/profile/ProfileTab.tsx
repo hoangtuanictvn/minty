@@ -13,6 +13,7 @@ import { X_TOKEN_PROGRAM_ADDRESS } from "../../lib/xToken/programs";
 import { getUpdateProfileInstruction } from "../../lib/xToken/instructions";
 import { deriveUserProfilePda, fetchUserProfile as fetchUserProfileOnchain, prepareProfilePayload } from "../../lib/profile";
 import { AccountMeta, AccountRole, Address, TransactionSigner } from "@solana/kit";
+import { useLinkAccount } from "@privy-io/react-auth";
 
 interface ProfileTabProps {
     authenticated: boolean;
@@ -24,10 +25,11 @@ export function ProfileTab({ authenticated, walletAddress, twitterUsername }: Pr
     const { sendTransaction } = useSendTransaction();
     const { wallets } = useSolanaWallets();
 
+    const { linkTwitter } = useLinkAccount();
+
     const [username, setUsername] = useState('');
     const [bio, setBio] = useState('');
 
-    // Load on-chain profile (username, bio) if exists
     useEffect(() => {
         const loadProfile = async () => {
             try {
@@ -176,7 +178,7 @@ export function ProfileTab({ authenticated, walletAddress, twitterUsername }: Pr
                             <div className="flex items-center space-x-2">
                                 <span className="font-mono text-sm">
                                     {authenticated
-                                        ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
+                                        ? `${walletAddress?.slice(0, 6)}...${walletAddress?.slice(-4)}`
                                         : 'Not Connected'
                                     }
                                 </span>
@@ -224,13 +226,20 @@ export function ProfileTab({ authenticated, walletAddress, twitterUsername }: Pr
                                 <CheckCircle className="h-4 w-4 text-green-500" />
                                 <span className="text-sm">Wallet Connected</span>
                             </div>
-                            <div className="flex items-center space-x-2">
-                                {twitterUsername ? (
-                                    <CheckCircle className="h-4 w-4 text-green-500" />
-                                ) : (
-                                    <AlertCircle className="h-4 w-4 text-yellow-500" />
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-2">
+                                    {twitterUsername ? (
+                                        <CheckCircle className="h-4 w-4 text-green-500" />
+                                    ) : (
+                                        <AlertCircle className="h-4 w-4 text-yellow-500" />
+                                    )}
+                                    <span className="text-sm">X Account Verification</span>
+                                </div>
+                                {!twitterUsername && (
+                                    <Button size="sm" onClick={() => linkTwitter()} disabled={!authenticated}>
+                                        Verify
+                                    </Button>
                                 )}
-                                <span className="text-sm">X Account Verification</span>
                             </div>
                         </div>
                     </div>

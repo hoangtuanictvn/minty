@@ -5,9 +5,16 @@ import { Badge } from './ui/badge';
 import { Input } from './ui/input';
 import { Avatar, AvatarFallback } from './ui/avatar';
 import { Search, TrendingUp, TrendingDown, Twitter, ExternalLink, Sparkles, Loader2 } from 'lucide-react';
-import { Connection, PublicKey } from '@solana/web3.js';
+import { Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction } from '@solana/web3.js';
 import { X_TOKEN_PROGRAM_ADDRESS } from '../lib/xToken/programs';
 import { fetchUserProfile } from '../lib/profile';
+import { useSendTransaction, useSolanaWallets } from '@privy-io/react-auth/solana';
+import { usePrivy } from '@privy-io/react-auth';
+import { toast } from 'react-toastify';
+import { getInitializeInstruction, InitializeInput } from '../lib/xToken/instructions';
+import { AccountMeta, AccountRole, Address, TransactionSigner } from '@solana/kit';
+import { TOKEN_PROGRAM_ID, MINT_SIZE } from '@solana/spl-token';
+import { Buffer } from 'buffer';
 
 interface TokenListProps {
   authenticated: boolean;
@@ -36,6 +43,9 @@ type OnchainToken = {
 };
 
 export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
+  const { sendTransaction } = useSendTransaction();
+  const { wallets } = useSolanaWallets();
+  const { user } = usePrivy();
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState<'all' | 'verified' | 'trending'>('all');
   const [tokens, setTokens] = useState<OnchainToken[]>([]);
@@ -155,6 +165,95 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
     window.open(`https://x.com/${xHandle.replace('@', '')}`, '_blank');
   };
 
+  // Helper: encode owner username to 32-byte array
+  const encodeOwner = (username: string | undefined): number[] => {
+    const name = username || '';
+    const bytes = Array.from(Buffer.from(name, 'utf8'));
+    const padded = new Array(32).fill(0);
+    padded[0] = Math.min(bytes.length, 31);
+    for (let i = 0; i < Math.min(bytes.length, 31); i++) {
+      padded[i + 1] = bytes[i];
+    }
+    return padded;
+  };
+
+  const createToken = async () => {
+    try {
+      if (!authenticated) throw new Error('Please connect wallet');
+      if (!wallets || wallets.length === 0) throw new Error('No wallet connected');
+
+      const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
+      const userAddress = new PublicKey(wallets[0].address);
+      const twitterUsername = user?.twitter?.username;
+
+      const mintKeypair = Keypair.generate();
+      const bondingCurveSeeds = [Buffer.from('x_token'), mintKeypair.publicKey.toBuffer()];
+      const [bondingCurvePda] = PublicKey.findProgramAddressSync(bondingCurveSeeds, new PublicKey(X_TOKEN_PROGRAM_ADDRESS));
+
+      const treasurySeeds = [Buffer.from('treasury'), mintKeypair.publicKey.toBuffer()];
+      const [treasuryPda] = PublicKey.findProgramAddressSync(treasurySeeds, new PublicKey(X_TOKEN_PROGRAM_ADDRESS));
+
+      const initializeInput: InitializeInput = {
+        authority: { address: wallets[0].address as Address } as TransactionSigner,
+        bondingCurve: bondingCurvePda.toBase58() as Address,
+        mint: mintKeypair.publicKey.toBase58() as Address,
+        treasury: treasuryPda.toBase58() as Address,
+        payer: { address: wallets[0].address as Address } as TransactionSigner,
+        systemProgram: SystemProgram.programId.toBase58() as Address,
+        tokenProgram: TOKEN_PROGRAM_ID.toBase58() as Address,
+        rent: 'SysvarRent111111111111111111111111111111111' as Address,
+        decimals: 9,
+        curveType: 0,
+        feeBasisPoints: 50,
+        owner: encodeOwner(twitterUsername),
+        basePrice: 1,
+        slope: 1,
+        maxSupply: 100_000_000_000_000_000,
+        feeRecipient: wallets[0].address as Address,
+      };
+
+      const initializeInstruction = getInitializeInstruction(initializeInput);
+      const keys = initializeInstruction.accounts.map((meta: AccountMeta<string>) => ({
+        pubkey: new PublicKey(meta.address),
+        isSigner: meta.role === AccountRole.READONLY_SIGNER || meta.role === AccountRole.WRITABLE_SIGNER,
+        isWritable: meta.role === AccountRole.WRITABLE || meta.role === AccountRole.WRITABLE_SIGNER,
+      }));
+
+      const txInstruction = new TransactionInstruction({
+        keys,
+        programId: new PublicKey(initializeInstruction.programAddress),
+        data: Buffer.from(initializeInstruction.data),
+      });
+
+      const transaction = new Transaction();
+      const mintRent = await connection.getMinimumBalanceForRentExemption(MINT_SIZE);
+      const createMintIx = SystemProgram.createAccount({
+        fromPubkey: userAddress,
+        newAccountPubkey: mintKeypair.publicKey,
+        lamports: mintRent + 1_000_000,
+        space: MINT_SIZE,
+        programId: TOKEN_PROGRAM_ID,
+      });
+
+      const latestBlockhash = await connection.getLatestBlockhash();
+      transaction.recentBlockhash = latestBlockhash.blockhash;
+      transaction.feePayer = userAddress;
+      transaction.add(createMintIx, txInstruction);
+      transaction.partialSign(mintKeypair);
+
+      const receipt = await sendTransaction({ transaction, connection, address: wallets[0].address });
+      await connection.confirmTransaction({
+        signature: receipt.signature,
+        blockhash: latestBlockhash.blockhash,
+        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+      }, 'confirmed');
+
+      toast.success('Token created successfully.');
+    } catch (error: any) {
+      toast.error(String(error?.message || error));
+    }
+  };
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -212,6 +311,9 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
             onClick={() => setFilter('trending')}
           >
             Trending
+          </Button>
+          <Button onClick={createToken} disabled={!authenticated}>
+            Create Token
           </Button>
         </div>
       </div>

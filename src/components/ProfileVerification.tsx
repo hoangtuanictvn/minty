@@ -1,8 +1,7 @@
-import { useState } from 'react';
 import { Alert, AlertDescription } from './ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { AlertCircle } from 'lucide-react';
-import { ProfileTab, VerificationTab, StatisticsTab, TokenCreationTab } from './profile';
+import { ProfileTab, StatisticsTab } from './profile';
 import { usePrivy } from "@privy-io/react-auth";
 
 interface ProfileVerificationProps {
@@ -27,10 +26,8 @@ export function ProfileVerification({ authenticated, walletAddress }: ProfileVer
       )}
 
       <Tabs defaultValue="profile" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="profile">Profile</TabsTrigger>
-          {/* <TabsTrigger value="verification">Verification</TabsTrigger> */}
-          <TabsTrigger value="create">Create Token</TabsTrigger>
           <TabsTrigger value="stats">Statistics</TabsTrigger>
 
         </TabsList>
@@ -41,20 +38,6 @@ export function ProfileVerification({ authenticated, walletAddress }: ProfileVer
             walletAddress={walletAddress}
             twitterUsername={twitterUsername}
           />
-        </TabsContent>
-
-        {/* <TabsContent value="verification">
-          <VerificationTab
-            authenticated={authenticated}
-            walletAddress={walletAddress}
-            isVerified={isVerified}
-            xHandle={xHandle}
-            onVerificationComplete={handleVerificationComplete}
-          />
-        </TabsContent> */}
-
-        <TabsContent value="create">
-          <TokenCreationTab authenticated={authenticated} />
         </TabsContent>
 
         <TabsContent value="stats">
