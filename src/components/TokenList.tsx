@@ -8,7 +8,7 @@ import { Skeleton } from './ui/skeleton';
 import { Search, TrendingUp, TrendingDown, Twitter, ExternalLink, Sparkles, Loader2 } from 'lucide-react';
 import { Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction } from '@solana/web3.js';
 import { X_TOKEN_PROGRAM_ADDRESS } from '../lib/xToken/programs';
-import { fetchUserProfile } from '../lib/profile';
+import { fetchMultipleUserProfiles } from '../lib/profile';
 import { useSendTransaction, useSolanaWallets } from '@privy-io/react-auth/solana';
 import { usePrivy } from '@privy-io/react-auth';
 import { toast } from 'react-toastify';
@@ -27,17 +27,17 @@ type OnchainToken = {
   tokenMint: string;
   authority: string;
   feeRecipient: string;
-  owner?: string; // Owner username from token data
-  solReserve: number; // in SOL
+  owner?: string;
+  solReserve: number;
   tokenReserve: number;
   totalSupply: number;
-  basePrice: number; // in SOL
-  slope: number; // raw
+  basePrice: number;
+  slope: number;
   maxSupply: number;
   feeBasisPoints: number;
   curveType: number;
-  username?: string; // Username from user profile
-  bio?: string; // Bio from user profile
+  username?: string;
+  bio?: string;
   // Calculated fields
   currentPrice: number; // Current price per token in SOL
   marketCap: number; // Market cap in SOL
@@ -117,28 +117,24 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
           };
         });
 
-        // Fetch usernames and bios for all tokens
-        const tokensWithProfiles = await Promise.all(
-          parsed.map(async (token) => {
-            try {
-              const authorityPk = new PublicKey(token.authority);
-              const profile = await fetchUserProfile(connection, authorityPk, programId);
-              return {
-                ...token,
-                username: profile?.username || undefined,
-                bio: profile?.bio || undefined,
-              };
-            } catch (error) {
-              console.warn(`Failed to fetch profile for authority ${token.authority}:`, error);
-              return token;
-            }
-          })
-        );
+        // Fetch usernames and bios for all tokens in one batch call
+        const uniqueAuthorities = [...new Set(parsed.map(token => token.authority))];
+        const authorityPks = uniqueAuthorities.map(auth => new PublicKey(auth));
+        const profilesMap = await fetchMultipleUserProfiles(connection, authorityPks, programId);
+
+        const tokensWithProfiles = parsed.map(token => {
+          const profile = profilesMap.get(token.authority);
+          return {
+            ...token,
+            username: profile?.username || undefined,
+            bio: profile?.bio || undefined,
+          };
+        });
 
         setTokens(tokensWithProfiles);
       } catch (e: any) {
         console.error('Failed to load onchain tokens:', e?.message || e);
-        setError('Không tải được danh sách token onchain.');
+        setError('Failed to load onchain tokens.');
         setTokens([]);
       } finally {
         setLoading(false);
@@ -414,7 +410,7 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
                     </div> */}
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">Total Supply</span>
-                      <span className="text-sm font-medium">{token.totalSupply.toLocaleString()}</span>
+                      <span className="text-sm font-medium">{(token.totalSupply / 1_000_000_000).toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">SOL Reserve</span>

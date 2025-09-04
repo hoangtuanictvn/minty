@@ -43,6 +43,39 @@ export async function fetchUserProfile(
     return { username, bio };
 }
 
+export async function fetchMultipleUserProfiles(
+    connection: Connection,
+    userAddresses: PublicKey[],
+    programId: PublicKey
+): Promise<Map<string, { username: string; bio: string }>> {
+    if (userAddresses.length === 0) return new Map();
+
+    // Derive PDAs for all user addresses
+    const pdas = userAddresses.map(address => deriveUserProfilePda(address, programId));
+
+    // Fetch all accounts in one call
+    const accountInfos = await connection.getMultipleAccountsInfo(pdas);
+
+    const profilesMap = new Map<string, { username: string; bio: string }>();
+
+    accountInfos.forEach((info, index) => {
+        if (info && info.data) {
+            try {
+                const data = new Uint8Array(info.data as unknown as ArrayBufferLike);
+                const { username, bio } = decodeUserProfileAccount(data);
+                if (username || bio) {
+                    const userAddress = userAddresses[index].toBase58();
+                    profilesMap.set(userAddress, { username, bio });
+                }
+            } catch (error) {
+                console.warn(`Failed to decode profile for user ${userAddresses[index].toBase58()}:`, error);
+            }
+        }
+    });
+
+    return profilesMap;
+}
+
 export function prepareProfilePayload(inputUsername: string, inputBio: string): {
     usernameFixed: Uint8Array;
     bioFixed: Uint8Array;

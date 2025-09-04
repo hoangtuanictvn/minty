@@ -7,6 +7,7 @@ import { Badge } from './ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { AlertCircle, TrendingUp, TrendingDown } from 'lucide-react';
 import { Alert, AlertDescription } from './ui/alert';
+import { Skeleton } from './ui/skeleton';
 import { toast } from 'react-toastify';
 import { useSendTransaction, useSolanaWallets } from '@privy-io/react-auth/solana';
 import { Connection, PublicKey, SystemProgram, Transaction, TransactionInstruction } from '@solana/web3.js';
@@ -31,6 +32,8 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
   const [walletToken, setWalletToken] = useState<number | null>(null);
   const [debouncedBuyAmount, setDebouncedBuyAmount] = useState<string>('');
   const [debouncedSellAmount, setDebouncedSellAmount] = useState<string>('');
+  const [recentTrades, setRecentTrades] = useState<any[]>([]);
+  const [isLoadingTrades, setIsLoadingTrades] = useState<boolean>(false);
   const { sendTransaction } = useSendTransaction();
   const { wallets } = useSolanaWallets();
 
@@ -71,6 +74,98 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
     const [pda] = PublicKey.findProgramAddressSync(seeds, new PublicKey(X_TOKEN_PROGRAM_ADDRESS));
     return pda;
   };
+
+  async function fetchRecentTrades(connection: Connection, mint: PublicKey) {
+    try {
+      setIsLoadingTrades(true);
+
+      // Lấy signatures từ tất cả các account liên quan
+      const [bondingCurve, treasuryPda] = [deriveBondingCurvePda(mint), deriveTreasuryPda(mint)];
+      const signatures = await Promise.all([
+        connection.getSignaturesForAddress(bondingCurve, { limit: 10 }),
+        connection.getSignaturesForAddress(mint, { limit: 10 }),
+        connection.getSignaturesForAddress(treasuryPda, { limit: 10 })
+      ]);
+
+      const allSignatures = signatures.flat()
+        .filter((sig, index, arr) => arr.findIndex(s => s.signature === sig.signature) === index)
+        .sort((a, b) => (b.blockTime || 0) - (a.blockTime || 0))
+        .slice(0, 5);
+
+      const trades: any[] = [];
+
+      for (const sigInfo of allSignatures) {
+        try {
+          const tx = await connection.getTransaction(sigInfo.signature, {
+            commitment: 'confirmed',
+            maxSupportedTransactionVersion: 0,
+          });
+
+          if (!tx?.meta || tx.meta.err) continue;
+
+          // Tìm loại giao dịch từ program logs
+          const tradeType = findTradeType(tx.meta.logMessages || []);
+          if (!tradeType) continue;
+
+          // Tính toán amounts
+          const { tokenAmount, solAmount } = calculateAmounts(tx, mint, tradeType);
+          if (tokenAmount <= 0 || solAmount <= 0) continue;
+
+          // Thêm vào danh sách trades
+          trades.push({
+            type: tradeType,
+            amount: tokenAmount,
+            price: solAmount / tokenAmount,
+            time: new Date(sigInfo.blockTime * 1000).toLocaleString('en-US'),
+            signature: sigInfo.signature,
+          });
+
+        } catch (error) {
+          console.error('Error processing transaction:', error);
+        }
+      }
+
+      setRecentTrades(trades);
+    } catch (error) {
+      console.error('Error fetching recent trades:', error);
+      setRecentTrades([]);
+    } finally {
+      setIsLoadingTrades(false);
+    }
+  }
+
+  // Helper functions
+  function findTradeType(logs: string[]): string | null {
+    for (const log of logs) {
+      if (log.includes('Buy')) return 'buy';
+      if (log.includes('Sell')) return 'sell';
+    }
+    return null;
+  }
+
+  function calculateAmounts(tx: any, mint: PublicKey, tradeType: string) {
+    const preBalances = tx.meta.preTokenBalances || [];
+    const postBalances = tx.meta.postTokenBalances || [];
+    const preSolBalance = tx.meta.preBalances[0] || 0;
+    const postSolBalance = tx.meta.postBalances[0] || 0;
+    const fee = tx.meta.fee || 0;
+
+    // Tìm token account
+    const tokenAccount = preBalances.find(b => b.mint === mint.toBase58()) ||
+      postBalances.find(b => b.mint === mint.toBase58());
+
+    if (!tokenAccount) return { tokenAmount: 0, solAmount: 0 };
+
+    // Tính token amount
+    const preBalance = preBalances.find(b => b.accountIndex === tokenAccount.accountIndex)?.uiTokenAmount?.uiAmount || 0;
+    const postBalance = postBalances.find(b => b.accountIndex === tokenAccount.accountIndex)?.uiTokenAmount?.uiAmount || 0;
+    const tokenAmount = tradeType === 'buy' ? postBalance - preBalance : preBalance - postBalance;
+
+    // Tính SOL amount
+    const solAmount = Math.abs((tradeType === 'buy' ? preSolBalance - postSolBalance - fee : postSolBalance - preSolBalance) / 1_000_000_000);
+
+    return { tokenAmount, solAmount };
+  }
 
   async function fetchBondingCurveState(connection: Connection, bondingCurve: PublicKey) {
     const info = await connection.getAccountInfo(bondingCurve);
@@ -145,14 +240,13 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
     return total > 0n ? total : 0n;
   }
 
-  // Debounce user input for buy/sell amounts to avoid excessive RPC calls
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedBuyAmount(buyAmount), 300);
+    const t = setTimeout(() => setDebouncedBuyAmount(buyAmount), 500);
     return () => clearTimeout(t);
   }, [buyAmount]);
 
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedSellAmount(sellAmount), 300);
+    const t = setTimeout(() => setDebouncedSellAmount(sellAmount), 500);
     return () => clearTimeout(t);
   }, [sellAmount]);
 
@@ -222,6 +316,25 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
       }
     })();
   }, [authenticated, wallets && wallets[0]?.address, selectedToken?.mint]);
+
+  // Fetch recent trades when token changes
+  useEffect(() => {
+    (async () => {
+      if (!token?.mint) {
+        setRecentTrades([]);
+        return;
+      }
+
+      try {
+        const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
+        const mint = new PublicKey(token.mint);
+        await fetchRecentTrades(connection, mint);
+      } catch (error) {
+        console.error('Error fetching recent trades:', error);
+        setRecentTrades([]);
+      }
+    })();
+  }, [token?.mint]);
 
   const handleBuy = async () => {
     try {
@@ -298,6 +411,7 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
         const refreshed = await fetchBondingCurveState(connection, bondingCurve);
         setCurrentPriceSol(computeCurrentPriceSol({ basePriceLamports: refreshed.basePriceLamports, slope: refreshed.slope, totalSupply: refreshed.totalSupply, curveType: refreshed.curveType }));
         await refreshBalances(connection, buyerPubkey, mint);
+        await fetchRecentTrades(connection, mint);
       } catch { }
     } catch (e: any) {
       toast.error(String(e?.message || e));
@@ -393,6 +507,7 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
           curveType: refreshed.curveType
         }));
         await refreshBalances(connection, sellerPubkey, mint);
+        await fetchRecentTrades(connection, mint);
       } catch { }
     } catch (e: any) {
       console.error('[SELL] error:', e);
@@ -403,13 +518,6 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
     }
   };
 
-  const recentTrades = [
-    { type: 'buy', amount: 1.5, price: 156.78, time: '2 mins ago' },
-    { type: 'sell', amount: 0.8, price: 155.23, time: '5 mins ago' },
-    { type: 'buy', amount: 3.2, price: 157.45, time: '8 mins ago' },
-    { type: 'sell', amount: 2.1, price: 154.67, time: '12 mins ago' },
-    { type: 'buy', amount: 0.5, price: 156.12, time: '15 mins ago' }
-  ];
 
   return (
     <div className="space-y-6">
@@ -519,20 +627,40 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
               <CardTitle>Recent Trades</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {recentTrades.map((trade, index) => (
-                <div key={index} className="flex items-center justify-between text-sm">
-                  <div className="flex items-center space-x-2">
-                    <Badge variant={trade.type === 'buy' ? 'default' : 'secondary'}>
-                      {trade.type === 'buy' ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                    </Badge>
-                    <span>{trade.amount} {token.symbol}</span>
+              {isLoadingTrades ? (
+                // Skeleton loading cho 5 items
+                Array.from({ length: 5 }).map((_, index) => (
+                  <div key={index} className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Skeleton className="h-5 w-16" />
+                      <Skeleton className="h-4 w-20" />
+                    </div>
+                    <div className="text-right space-y-1">
+                      <Skeleton className="h-4 w-24" />
+                      <Skeleton className="h-3 w-16" />
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-medium">—</p>
-                    <p className="text-muted-foreground text-xs">{trade.time}</p>
-                  </div>
+                ))
+              ) : recentTrades.length === 0 ? (
+                <div className="text-center py-4">
+                  <div className="text-muted-foreground">No recent trades</div>
                 </div>
-              ))}
+              ) : (
+                recentTrades.map((trade, index) => (
+                  <div key={index} className="flex items-center justify-between text-sm">
+                    <div className="flex items-center space-x-2">
+                      <Badge variant={trade.type === 'buy' ? 'default' : 'secondary'}>
+                        {trade.type === 'buy' ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                      </Badge>
+                      <span>{trade.amount.toFixed(4)} {token.symbol}</span>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-medium">{trade.price.toFixed(9)} SOL</p>
+                      <p className="text-muted-foreground text-xs">{trade.time}</p>
+                    </div>
+                  </div>
+                ))
+              )}
             </CardContent>
           </Card>
         </div>
