@@ -30,8 +30,6 @@ export default function App() {
   };
 
 
-  console.log(user);
-
   const handleSelectToken = useCallback((t: any) => {
     const mapped = {
       name: `Mint ${t.tokenMint?.slice(0, 6)}...${t.tokenMint?.slice(-4)}`,

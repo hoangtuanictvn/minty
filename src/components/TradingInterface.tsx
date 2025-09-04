@@ -109,15 +109,12 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
 
           if (!tx?.meta || tx.meta.err) continue;
 
-          // Tìm loại giao dịch từ program logs
           const tradeType = findTradeType(tx.meta.logMessages || []);
           if (!tradeType) continue;
 
-          // Tính toán amounts
           const { tokenAmount, solAmount } = calculateAmounts(tx, mint, tradeType);
           if (tokenAmount <= 0 || solAmount <= 0) continue;
 
-          // Thêm vào danh sách trades
           trades.push({
             type: tradeType,
             amount: tokenAmount,
@@ -156,18 +153,15 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
     const postSolBalance = tx.meta.postBalances[0] || 0;
     const fee = tx.meta.fee || 0;
 
-    // Tìm token account
     const tokenAccount = preBalances.find(b => b.mint === mint.toBase58()) ||
       postBalances.find(b => b.mint === mint.toBase58());
 
     if (!tokenAccount) return { tokenAmount: 0, solAmount: 0 };
 
-    // Tính token amount
     const preBalance = preBalances.find(b => b.accountIndex === tokenAccount.accountIndex)?.uiTokenAmount?.uiAmount || 0;
     const postBalance = postBalances.find(b => b.accountIndex === tokenAccount.accountIndex)?.uiTokenAmount?.uiAmount || 0;
     const tokenAmount = tradeType === 'buy' ? postBalance - preBalance : preBalance - postBalance;
 
-    // Tính SOL amount
     const solAmount = Math.abs((tradeType === 'buy' ? preSolBalance - postSolBalance - fee : postSolBalance - preSolBalance) / 1_000_000_000);
 
     return { tokenAmount, solAmount };
@@ -180,7 +174,7 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
     const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
     const tokenMint = new PublicKey(data.subarray(32, 64));
     const feeRecipientPk = new PublicKey(data.subarray(64, 96));
-    // Offsets theo struct on-chain: owner [96..128), sau đó đến các u64/u16/u8
+
     const solReserveLamports = Number(view.getBigUint64(128, true));
     const tokenReserve = Number(view.getBigUint64(136, true));
     const totalSupply = Number(view.getBigUint64(144, true));
@@ -399,7 +393,7 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
       const ix = new TransactionInstruction({
         keys,
         programId: new PublicKey(ixCodama.programAddress),
-        data: Buffer.from(ixCodama.data) // Sử dụng data gốc 17 bytes (có discriminator)
+        data: Buffer.from(ixCodama.data)
       });
 
       const tx = new Transaction();
@@ -458,7 +452,6 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
       const feeRecipient = (token.raw?.feeRecipient || token.feeRecipient || state.feeRecipientPk?.toBase58?.()) as string | undefined;
       if (!feeRecipient) throw new Error('Missing fee recipient');
 
-      // Treasury PDA (system-owned)
       const treasuryPda = deriveTreasuryPda(mint);
 
       const ixCodama = getSellTokensInstruction({

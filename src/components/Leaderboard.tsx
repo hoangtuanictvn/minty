@@ -17,8 +17,6 @@ type LeaderboardEntry = {
   xHandle: string | null;
 };
 
-
-
 const getRankIcon = (rank: number) => {
   switch (rank) {
     case 1:
@@ -48,7 +46,6 @@ export function Leaderboard() {
         setLoading(true);
         const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
         const programId = new PublicKey(X_TOKEN_PROGRAM_ADDRESS);
-        // TradingStats account size = 128 bytes.
         const accounts = await connection.getProgramAccounts(programId, { filters: [{ dataSize: 128 }] });
 
         const decoded = await Promise.all(accounts.map(async (acc, index) => {
@@ -56,10 +53,8 @@ export function Leaderboard() {
           const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
           const userPubkey = new PublicKey(data.subarray(0, 32));
           const totalVolume = Number(view.getBigUint64(32, true));
-          // const totalProfitLoss = Number(view.getBigInt64(40, true)); // P&L disabled
           const tradeCount = view.getUint32(56, true);
 
-          // Fetch username & verified from UserProfile PDA if exists
           let username = userPubkey.toBase58().slice(0, 6);
           let verified = false;
           try {
@@ -79,7 +74,7 @@ export function Leaderboard() {
             rank: index + 1,
             username,
             walletAddress: userPubkey.toBase58(),
-            totalVolume: totalVolume / 1_000_000_000, // to SOL
+            totalVolume: totalVolume / 1_000_000_000,
             trades: tradeCount,
             verified,
             xHandle: null,
@@ -87,7 +82,6 @@ export function Leaderboard() {
           return entry;
         }));
 
-        // Sort by totalVolume desc and add rank
         const sorted = decoded.sort((a, b) => b.totalVolume - a.totalVolume).map((e, i) => ({ ...e, rank: i + 1 })).slice(0, 50);
         setOnchainEntries(sorted);
       } catch {
@@ -103,11 +97,10 @@ export function Leaderboard() {
       <div className="text-center space-y-2">
         <h2 className="text-3xl font-bold">Top Traders Leaderboard</h2>
         <p className="text-muted-foreground">
-          Rankings based on total trading volume {loading ? '(loading...)' : ''}
+          Rankings based on total trading volume
         </p>
       </div>
 
-      {/* Top 3 Podium */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {loading ? (
           Array.from({ length: 3 }).map((_, i) => (
@@ -166,8 +159,6 @@ export function Leaderboard() {
                   </p>
                   <p className="text-sm text-muted-foreground">Total Volume</p>
                 </div>
-
-                {/* P&L removed */}
 
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Trades:</span>

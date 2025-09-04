@@ -16,7 +16,7 @@ export default function MyWalletProvider({ children }: PropsWithChildren) {
                 loginMethods: ["wallet", "twitter"],
                 embeddedWallets: {
                     solana: {
-                        createOnLogin: 'users-without-wallets', // mặc định là 'all-users'
+                        createOnLogin: 'users-without-wallets',
                     },
                 },
                 externalWallets: { solana: { connectors: toSolanaWalletConnectors() } },

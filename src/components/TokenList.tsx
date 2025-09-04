@@ -3,9 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Input } from './ui/input';
-import { Avatar, AvatarFallback } from './ui/avatar';
 import { Skeleton } from './ui/skeleton';
-import { Search, TrendingUp, TrendingDown, Twitter, ExternalLink, Sparkles, Loader2 } from 'lucide-react';
+import { Search, Twitter, ExternalLink, Sparkles } from 'lucide-react';
 import { Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction } from '@solana/web3.js';
 import { X_TOKEN_PROGRAM_ADDRESS } from '../lib/xToken/programs';
 import { fetchMultipleUserProfiles } from '../lib/profile';
@@ -38,7 +37,7 @@ type OnchainToken = {
   curveType: number;
   username?: string;
   bio?: string;
-  // Calculated fields
+
   currentPrice: number; // Current price per token in SOL
   marketCap: number; // Market cap in SOL
 };
@@ -94,9 +93,8 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
           const isInitialized = data[179] === 1;
           if (!isInitialized) throw new Error('uninitialized');
 
-          // Calculate current price and market cap
           const currentPrice = basePriceLamports / 1_000_000_000 + (slope * totalSupply) / (1_000_000_000 * 1_000_000_000);
-          const marketCap = currentPrice * totalSupply / 1_000_000_000; // Convert from base units to tokens
+          const marketCap = currentPrice * totalSupply / 1_000_000_000;
 
           return {
             id: a.pubkey.toBase58(),
@@ -117,7 +115,6 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
           };
         });
 
-        // Fetch usernames and bios for all tokens in one batch call
         const uniqueAuthorities = [...new Set(parsed.map(token => token.authority))];
         const authorityPks = uniqueAuthorities.map(auth => new PublicKey(auth));
         const profilesMap = await fetchMultipleUserProfiles(connection, authorityPks, programId);
@@ -144,8 +141,6 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
     fetchTokens();
   }, [refreshNonce]);
 
-  console.log(tokens);
-
 
   const filteredTokens = tokens.filter(token => {
     const name = `${token.tokenMint.slice(0, 4)}`;
@@ -154,8 +149,8 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
     const hay = `${name} ${display} ${handle}`.toLowerCase();
     const matchesSearch = hay.includes(searchTerm.toLowerCase());
 
-    if (filter === 'verified') return matchesSearch; // Chưa có verified onchain
-    if (filter === 'trending') return matchesSearch; // Chưa có trend metric
+    if (filter === 'verified') return matchesSearch;
+    if (filter === 'trending') return matchesSearch;
     return matchesSearch;
   });
 
@@ -163,7 +158,6 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
     window.open(`https://x.com/${xHandle.replace('@', '')}`, '_blank');
   };
 
-  // Helper: encode owner username to 32-byte array
   const encodeOwner = (username: string | undefined): number[] => {
     const name = username || '';
     const bytes = Array.from(Buffer.from(name, 'utf8'));
@@ -248,7 +242,6 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
 
       console.log("Token created:", receipt.signature);
       toast.success('Token created successfully.');
-      // Refetch token list after successful creation
       setRefreshNonce((n) => n + 1);
     } catch (error: any) {
       toast.error(String(error?.message || error));
@@ -318,7 +311,7 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Tìm theo mint, authority..."
+            placeholder="Search by mint, authority..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10"
@@ -331,18 +324,7 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
           >
             All
           </Button>
-          <Button
-            variant={filter === 'verified' ? 'default' : 'outline'}
-            onClick={() => setFilter('verified')}
-          >
-            Verified
-          </Button>
-          <Button
-            variant={filter === 'trending' ? 'default' : 'outline'}
-            onClick={() => setFilter('trending')}
-          >
-            Trending
-          </Button>
+
           <Button onClick={createToken} disabled={!authenticated}>
             Create Token
           </Button>
@@ -352,7 +334,7 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
       {filteredTokens.length === 0 ? (
         <div className="text-center py-12">
           <p className="text-muted-foreground">
-            {searchTerm ? 'Không tìm thấy token phù hợp.' : 'Chưa có token nào.'}
+            {searchTerm ? 'No matching token found.' : 'There are no tokens yet.'}
           </p>
         </div>
       ) : (
@@ -404,18 +386,12 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
                       <span className="text-sm text-muted-foreground">Market Cap</span>
                       <span className="font-medium text-blue-600">{token.marketCap.toFixed(4)} SOL</span>
                     </div>
-                    {/* <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">Base Price</span>
-                      <span className="text-sm font-medium">{token.basePrice.toFixed(6)} SOL</span>
-                    </div> */}
+
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">Total Supply</span>
                       <span className="text-sm font-medium">{(token.totalSupply / 1_000_000_000).toLocaleString()}</span>
                     </div>
-                    {/* <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">SOL Reserve</span>
-                      <span className="text-sm font-medium">{token.solReserve.toFixed(4)} SOL</span>
-                    </div> */}
+
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">Fee</span>
                       <span className="text-sm font-medium">{(token.feeBasisPoints / 100).toFixed(2)}%</span>
