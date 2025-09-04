@@ -75,6 +75,12 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
     return pda;
   };
 
+  const deriveTradingStatsPda = (owner: PublicKey) => {
+    const seeds = [Buffer.from('trading_stats'), owner.toBuffer()];
+    const [pda] = PublicKey.findProgramAddressSync(seeds, new PublicKey(X_TOKEN_PROGRAM_ADDRESS));
+    return pda;
+  };
+
   async function fetchRecentTrades(connection: Connection, mint: PublicKey) {
     try {
       setIsLoadingTrades(true);
@@ -377,6 +383,7 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
         systemProgram: SystemProgram.programId.toBase58() as Address,
         tokenProgram: TOKEN_PROGRAM_ID.toBase58() as Address,
         associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID.toBase58() as Address,
+        tradingStats: deriveTradingStatsPda(buyerPubkey).toBase58() as Address,
         tokenAmount: tokenAmountUnits,
         maxSolAmount: maxSolLamportsBI,
         treasury: treasuryPda.toBase58() as Address,
@@ -461,6 +468,7 @@ export function TradingInterface({ authenticated, selectedToken }: TradingInterf
         sellerTokenAccount: sellerAta.toBase58() as Address,
         treasury: treasuryPda.toBase58() as Address,
         feeRecipient: feeRecipient as Address,
+        tradingStats: deriveTradingStatsPda(sellerPubkey).toBase58() as Address,
         tokenProgram: TOKEN_PROGRAM_ID.toBase58() as Address,
         systemProgram: SystemProgram.programId.toBase58() as Address,
         tokenAmount: tokenAmountUnits,

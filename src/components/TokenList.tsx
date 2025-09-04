@@ -412,10 +412,10 @@ export function TokenList({ authenticated, onSelectToken }: TokenListProps) {
                       <span className="text-sm text-muted-foreground">Total Supply</span>
                       <span className="text-sm font-medium">{(token.totalSupply / 1_000_000_000).toLocaleString()}</span>
                     </div>
-                    <div className="flex justify-between items-center">
+                    {/* <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">SOL Reserve</span>
                       <span className="text-sm font-medium">{token.solReserve.toFixed(4)} SOL</span>
-                    </div>
+                    </div> */}
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">Fee</span>
                       <span className="text-sm font-medium">{(token.feeBasisPoints / 100).toFixed(2)}%</span>
